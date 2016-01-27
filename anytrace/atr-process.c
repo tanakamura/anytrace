@@ -5,7 +5,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <inttypes.h>
+#include <sys/ptrace.h>
 
 #include "npr/strbuf.h"
 #include "npr/varray.h"
@@ -26,6 +28,18 @@ ATR_open_process(struct ATR_Process *dst,
                                  __LINE__);
         return -1;
     }
+
+    long pt_result = ptrace(PTRACE_ATTACH, pid, NULL, NULL);
+    if (pt_result != 0) {
+        ATR_set_libc_path_error(atr,
+                                &atr->last_error,
+                                errno,
+                                "ptrace");
+        return -1;
+    }
+
+    int wait_st;
+    waitpid(pid, &wait_st, 0);
 
     char buf[1024];
     sprintf(buf, "/proc/%d/maps", pid);

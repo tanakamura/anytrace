@@ -54,5 +54,4 @@ main(int argc, char **argv)
 
     ATR_close_process(&atr, &proc);
     ATR_fini(&atr);
-    
 }

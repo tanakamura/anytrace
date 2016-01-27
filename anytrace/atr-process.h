@@ -25,8 +25,6 @@ struct ATR_Process {
     struct npr_mempool allocator;
     int pid;
 
-    int ptrace_fd;
-
     int num_module;
     struct ATR_Module *modules;
 
