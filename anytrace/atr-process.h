@@ -2,6 +2,7 @@
 #define ANYTRACE_PROCESS_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include "npr/int-map.h"
 #include "npr/mempool.h"
@@ -11,21 +12,26 @@ extern "C" {
 #endif
 
 struct ATR_Module {
-    struct ATR_Process *proc;
-
-    uintptr_t start, end;
     const char *path;
+};
+
+struct ATR_Mapping {
+    uintptr_t start, end, offset;
+
+    int module;
 };
 
 struct ATR_Process {
     struct npr_mempool allocator;
     int pid;
 
-    struct npr_symtab module_table;
     int ptrace_fd;
 
     int num_module;
     struct ATR_Module *modules;
+
+    int num_mapping;
+    struct ATR_Mapping *mappings;
 };
 
 
@@ -38,6 +44,10 @@ int ATR_open_process(struct ATR_Process *dst,
 
 void ATR_close_process(struct ATR *atr,
                        struct ATR_Process *proc);
+
+void ATR_dump_process(FILE *fp,
+                      struct ATR *atr,
+                      struct ATR_Process *proc);
 
 #ifdef __cplusplus
 }

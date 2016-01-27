@@ -4,8 +4,11 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <string.h>
+#include <inttypes.h>
 
 #include "npr/strbuf.h"
+#include "npr/varray.h"
 
 #include "anytrace/atr.h"
 #include "anytrace/atr-process.h"
@@ -37,6 +40,12 @@ ATR_open_process(struct ATR_Process *dst,
 
     struct npr_strbuf path_buf;
     npr_strbuf_init(&path_buf);
+
+    struct npr_varray modules;
+    npr_varray_init(&modules, 4, sizeof(struct ATR_Module));
+
+    struct npr_varray mappings;
+    npr_varray_init(&mappings, 4, sizeof(struct ATR_Mapping));
 
     while (1) {
     next_line:;
@@ -71,14 +80,45 @@ ATR_open_process(struct ATR_Process *dst,
             npr_strbuf_putc(&path_buf, c);
         }
 
-        char *module_path = npr_strbuf_strdup_pool(&path_buf, &dst->allocator);
-        puts(module_path);
+
+        struct ATR_Module *m;
+        char *module_path = npr_strbuf_c_str(&path_buf);
+        int mi;
+
+        for (mi=0; mi<modules.nelem; mi++) {
+            m = VA_ELEM_PTR(struct ATR_Module, &modules, mi);
+            if (strcmp(m->path, module_path) == 0) {
+                break;
+            }
+        }
+
+        if (mi == modules.nelem) {
+            VA_NEWELEM_LASTPTR(struct ATR_Module, &modules, m);
+
+            m->path = npr_strbuf_strdup_pool(&path_buf, &dst->allocator);
+        }
+
+        struct ATR_Mapping *ma;
+        VA_NEWELEM_LASTPTR(struct ATR_Mapping, &mappings, ma);
+
+        ma->start = start;
+        ma->end = end;
+        ma->offset = off;
+        ma->module = mi;
 
         path_buf.cur = 0;
     }
 
     fclose(fp);
     npr_strbuf_fini(&path_buf);
+
+    dst->pid = pid;
+
+    dst->num_mapping = mappings.nelem;
+    dst->mappings = npr_varray_close(&mappings, &dst->allocator);
+
+    dst->num_module = modules.nelem;
+    dst->modules = npr_varray_close(&modules, &dst->allocator);
 
     return 0;
 }
@@ -88,5 +128,26 @@ ATR_close_process(struct ATR *atr,
                   struct ATR_Process *proc)
 {
     npr_mempool_fini(&proc->allocator);
-    
+}
+
+
+void
+ATR_dump_process(FILE *fp,
+                 struct ATR *atr,
+                 struct ATR_Process *proc)
+{
+    fprintf(fp, "==modules==\n");
+    for (int i=0; i<proc->num_module; i++) {
+        fprintf(fp, "%s\n", proc->modules[i].path);
+    }
+
+
+    fprintf(fp, "==mappings==\n");
+    for (int i=0; i<proc->num_mapping; i++) {
+        fprintf(fp, "%32s(offset=%16" PRIxPTR "):start=%16"PRIxPTR", end=%16"PRIxPTR"\n",
+                proc->modules[proc->mappings[i].module].path,
+                proc->mappings[i].offset,
+                proc->mappings[i].start,
+                proc->mappings[i].end);
+    }
 }

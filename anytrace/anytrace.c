@@ -47,7 +47,10 @@ main(int argc, char **argv)
     int r = ATR_open_process(&proc, &atr, pid);
     if (r < 0) {
         ATR_perror(&atr);
+        exit(1);
     }
+
+    ATR_dump_process(stderr, &atr, &proc);
 
     ATR_close_process(&atr, &proc);
     ATR_fini(&atr);

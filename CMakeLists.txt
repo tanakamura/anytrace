@@ -14,6 +14,7 @@ add_library(npr
   npr/strbuf.c
   npr/mempool-c.c
   npr/chunk-alloc.c
+  npr/varray.c
 )
 
 add_library(atr
