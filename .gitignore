@@ -1,0 +1,17 @@
+*~
+*.ilk
+*.lib
+*.obj
+*.exe
+*.pdb
+*.sln
+*.suo
+*.o
+*.d
+*.i
+*.s
+*.asm
+*.dll
+*.so
+*.res
+b
