@@ -40,7 +40,7 @@ main(int argc, char **argv)
     }
 
     struct ATR atr;
-    struct ATR_Process proc;
+    struct ATR_process proc;
 
     ATR_init(&atr);
     

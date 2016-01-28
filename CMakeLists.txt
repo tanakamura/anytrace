@@ -8,21 +8,26 @@ if(ENABLE_WERROR)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif()
 
+configure_file (anytrace/config.h.in config.h)
+
 include_directories(.)
+include_directories(${CMAKE_BINARY_DIR})
+
 add_library(npr
   npr/int-map.c
   npr/strbuf.c
   npr/mempool-c.c
   npr/chunk-alloc.c
   npr/varray.c
+  npr/symbol.c
 )
 
 add_library(atr
   anytrace/atr-errors.c
   anytrace/atr.c
   anytrace/atr-process.c
+  anytrace/atr-file.c
   )
-
 
 add_executable(anytrace
   anytrace/anytrace.c)

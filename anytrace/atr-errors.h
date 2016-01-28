@@ -17,6 +17,9 @@ enum ATR_error_code {
 
     ATR_LIBC_ERROR,
     ATR_LIBC_PATH_ERROR,
+    ATR_YAMA_ENABLED,
+    ATR_MAP_NOT_FOUND,
+    ATR_UNKNOWN_MAPPED_FILE_TYPE,
 
     ATR_INVALID_ARGUMENT,
 };
@@ -39,12 +42,23 @@ struct ATR_Error {
             char *func;
             int lineno;
         } invalid_argument;
+
+        struct {
+            char *path;
+        } unknown_file_type;
+
+        struct {
+            uintptr_t addr;
+        } map_not_found;
     }u;
 };
 
 void ATR_error_clear(struct ATR *atr, struct ATR_Error *e);
 char *ATR_strerror(struct ATR *atr, struct ATR_Error *e);
 
+void ATR_set_error_code(struct ATR *atr,
+                        struct ATR_Error *e,
+                        enum ATR_error_code c);
 void ATR_set_libc_path_error(struct ATR *atr,
                              struct ATR_Error *e,
                              int errno_,
@@ -55,6 +69,10 @@ void ATR_set_invalid_argument(struct ATR *atr,
                               const char *source_path,
                               const char *func,
                               int lineno);
+
+void ATR_set_unknown_mapped_file_type(struct ATR *atr,
+                                      struct ATR_Error *e,
+                                      const char *path);
 
 
 #ifdef __cplusplus

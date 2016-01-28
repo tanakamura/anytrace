@@ -4,6 +4,7 @@
 void
 ATR_init(struct ATR *atr)
 {
+    npr_symbol_init();
     atr->last_error.code = ATR_NO_ERROR;
 }
 

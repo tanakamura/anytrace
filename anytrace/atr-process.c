@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/user.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
@@ -14,9 +15,10 @@
 
 #include "anytrace/atr.h"
 #include "anytrace/atr-process.h"
+#include "anytrace/atr-file.h"
 
 int
-ATR_open_process(struct ATR_Process *dst,
+ATR_open_process(struct ATR_process *dst,
                  struct ATR *atr,
                  int pid)
 {
@@ -31,6 +33,17 @@ ATR_open_process(struct ATR_Process *dst,
 
     long pt_result = ptrace(PTRACE_ATTACH, pid, NULL, NULL);
     if (pt_result != 0) {
+        if (errno == EPERM) {
+            FILE *yama = fopen("/proc/sys/kernel/yama/ptrace_scope", "rb");
+            int c = fgetc(yama);
+            fclose(yama);
+
+            if (c != '0') {
+                ATR_set_error_code(atr, &atr->last_error, ATR_YAMA_ENABLED);
+                return -1;
+            }
+        }
+
         ATR_set_libc_path_error(atr,
                                 &atr->last_error,
                                 errno,
@@ -56,10 +69,10 @@ ATR_open_process(struct ATR_Process *dst,
     npr_strbuf_init(&path_buf);
 
     struct npr_varray modules;
-    npr_varray_init(&modules, 4, sizeof(struct ATR_Module));
+    npr_varray_init(&modules, 4, sizeof(struct ATR_module));
 
     struct npr_varray mappings;
-    npr_varray_init(&mappings, 4, sizeof(struct ATR_Mapping));
+    npr_varray_init(&mappings, 4, sizeof(struct ATR_mapping));
 
     while (1) {
     next_line:;
@@ -95,25 +108,25 @@ ATR_open_process(struct ATR_Process *dst,
         }
 
 
-        struct ATR_Module *m;
+        struct ATR_module *m;
         char *module_path = npr_strbuf_c_str(&path_buf);
         int mi;
 
         for (mi=0; mi<modules.nelem; mi++) {
-            m = VA_ELEM_PTR(struct ATR_Module, &modules, mi);
-            if (strcmp(m->path, module_path) == 0) {
+            m = VA_ELEM_PTR(struct ATR_module, &modules, mi);
+            if (strcmp(m->path->symstr, module_path) == 0) {
                 break;
             }
         }
 
         if (mi == modules.nelem) {
-            VA_NEWELEM_LASTPTR(struct ATR_Module, &modules, m);
+            VA_NEWELEM_LASTPTR(struct ATR_module, &modules, m);
 
-            m->path = npr_strbuf_strdup_pool(&path_buf, &dst->allocator);
+            m->path = npr_intern(npr_strbuf_c_str(&path_buf));
         }
 
-        struct ATR_Mapping *ma;
-        VA_NEWELEM_LASTPTR(struct ATR_Mapping, &mappings, ma);
+        struct ATR_mapping *ma;
+        VA_NEWELEM_LASTPTR(struct ATR_mapping, &mappings, ma);
 
         ma->start = start;
         ma->end = end;
@@ -139,29 +152,110 @@ ATR_open_process(struct ATR_Process *dst,
 
 void
 ATR_close_process(struct ATR *atr,
-                  struct ATR_Process *proc)
+                  struct ATR_process *proc)
 {
+    ptrace(PTRACE_DETACH, proc->pid, NULL, NULL);
+
     npr_mempool_fini(&proc->allocator);
+}
+
+
+int
+ATR_lookup_map_info(struct ATR_map_info *info,
+                    struct ATR *atr,
+                    struct ATR_process *proc,
+                    uintptr_t addr)
+{
+    int nm = proc->num_mapping;
+    for (int mi=0; mi<nm; mi++) {
+        struct ATR_mapping *map = &proc->mappings[mi];
+
+        if (addr >= map->start &&
+            addr < map->end)
+        {
+            /* found */
+
+            struct ATR_module *m = &proc->modules[map->module];
+
+            info->path = m->path;
+
+            uintptr_t map_offset = addr - map->start;
+            info->offset = map_offset + map->offset;
+
+            return 0;
+        }
+    }
+
+    return -1;
 }
 
 
 void
 ATR_dump_process(FILE *fp,
                  struct ATR *atr,
-                 struct ATR_Process *proc)
+                 struct ATR_process *proc)
 {
     fprintf(fp, "==modules==\n");
     for (int i=0; i<proc->num_module; i++) {
-        fprintf(fp, "%s\n", proc->modules[i].path);
+        fprintf(fp, "%s\n", proc->modules[i].path->symstr);
     }
-
 
     fprintf(fp, "==mappings==\n");
     for (int i=0; i<proc->num_mapping; i++) {
         fprintf(fp, "%32s(offset=%16" PRIxPTR "):start=%16"PRIxPTR", end=%16"PRIxPTR"\n",
-                proc->modules[proc->mappings[i].module].path,
+                proc->modules[proc->mappings[i].module].path->symstr,
                 proc->mappings[i].offset,
                 proc->mappings[i].start,
                 proc->mappings[i].end);
+    }
+
+    struct user_regs_struct regs;
+    ptrace(PTRACE_GETREGS, proc->pid,
+           NULL, &regs);
+
+    fprintf(fp, "==regs==\n");
+    fprintf(fp, "bp=%16llx\n", regs.rbp);
+    fprintf(fp, "sp=%16llx\n", regs.rsp);
+
+    struct ATR_map_info map;
+
+    int r = ATR_lookup_map_info(&map, atr, 
+                                proc, regs.rip);
+
+    if (r < 0) {
+        char *str = ATR_strerror(atr, &atr->last_error);
+        fprintf(fp, "pc=%16llx unmapped? (%s)\n", regs.rip, str);
+        ATR_free(atr, str);
+        ATR_error_clear(atr, &atr->last_error);
+    } else {
+        fprintf(fp, "pc=%16llx (path=%s, offset=%"PRIxPTR")\n",
+                regs.rip,
+                map.path->symstr,
+                map.offset);
+
+
+        struct ATR_file file;
+        int r = ATR_file_open(&file, atr, map.path->symstr);
+
+        if (r < 0) {
+            ATR_perror(atr);
+            return;
+        }
+
+        fprintf(fp,
+                "  text        =%16"PRIxPTR"-%16"PRIxPTR"\n"
+                "  debug_abbrev=%16"PRIxPTR"-%16"PRIxPTR"\n"
+                "  debug_info  =%16"PRIxPTR"-%16"PRIxPTR"\n"
+                "  eh_frame    =%16"PRIxPTR"-%16"PRIxPTR"\n",
+                file.text.start,
+                file.text.start + file.text.length,
+                file.debug_abbrev.start,
+                file.debug_abbrev.start + file.debug_abbrev.length,
+                file.debug_info.start,
+                file.debug_info.start + file.debug_info.length,
+                file.eh_frame.start,
+                file.eh_frame.start + file.eh_frame.length);
+
+        ATR_file_close(atr, &file);
     }
 }
