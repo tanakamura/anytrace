@@ -13,6 +13,7 @@ ATR_error_clear(struct ATR *atr, struct ATR_Error *e)
     case ATR_LIBC_ERROR:
     case ATR_YAMA_ENABLED:
     case ATR_MAP_NOT_FOUND:
+    case ATR_FRAME_INFO_NOT_FOUND:
         break;
 
     case ATR_LIBC_PATH_ERROR:
@@ -79,7 +80,14 @@ ATR_strerror(struct ATR *atr, struct ATR_Error *e)
         npr_strbuf_printf(&sb,
                           "map not found(addr=%016"PRIxPTR")",
                           e->u.map_not_found.addr);
+        break;
 
+    case ATR_FRAME_INFO_NOT_FOUND:
+        npr_strbuf_printf(&sb,
+                          "frame info not found(path=%s, offset=%016"PRIxPTR")",
+                          e->u.frame_info_not_found.path->symstr,
+                          e->u.frame_info_not_found.offset);
+        break;
     }
 
     char *ret = npr_strbuf_strdup(&sb);
@@ -136,4 +144,18 @@ ATR_set_error_code(struct ATR *atr,
     ATR_error_clear(atr, e);
 
     e->code = c;
+}
+
+void
+ATR_set_frame_info_not_found(struct ATR *atr,
+                             struct ATR_Error *e,
+                             struct npr_symbol *path,
+                             uintptr_t offset)
+{
+    ATR_error_clear(atr, e);
+
+    e->code = ATR_FRAME_INFO_NOT_FOUND;
+    e->u.frame_info_not_found.path = path;
+    e->u.frame_info_not_found.offset = offset;
+
 }

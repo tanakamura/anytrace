@@ -21,6 +21,8 @@ enum ATR_error_code {
     ATR_MAP_NOT_FOUND,
     ATR_UNKNOWN_MAPPED_FILE_TYPE,
 
+    ATR_FRAME_INFO_NOT_FOUND,
+
     ATR_INVALID_ARGUMENT,
 };
 
@@ -50,6 +52,11 @@ struct ATR_Error {
         struct {
             uintptr_t addr;
         } map_not_found;
+
+        struct {
+            struct npr_symbol *path;
+            uintptr_t offset;
+        } frame_info_not_found;
     }u;
 };
 
@@ -74,6 +81,10 @@ void ATR_set_unknown_mapped_file_type(struct ATR *atr,
                                       struct ATR_Error *e,
                                       const char *path);
 
+void ATR_set_frame_info_not_found(struct ATR *atr,
+                                  struct ATR_Error *e,
+                                  struct npr_symbol *path,
+                                  uintptr_t offset);
 
 #ifdef __cplusplus
 }

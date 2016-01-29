@@ -7,12 +7,15 @@
 extern "C" {
 #endif
 
+struct ATR_process;
+
 struct ATR_section {
     uintptr_t length;           // 0 if empty
     uintptr_t start;
 };
 
 struct ATR_file {
+    struct npr_symbol *path;
     int fd;
 
     size_t mapped_length;
@@ -22,28 +25,33 @@ struct ATR_file {
 };
 
 /* return negative if failed */
-int ATR_file_open(struct ATR_file *fp, struct ATR *atr, const char *path);
+int ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path);
 void ATR_file_close(struct ATR *atr, struct ATR_file *fp);
 
-struct ATR_return_addr_pos {
-    int sp_offset;
-};
-
 struct ATR_addr_info {
-    struct npr_symbol *sym;
-
     int flags;
-#define ATR_ADDR_INFO_HAVE_LOCATION (1<<0)
-#define ATR_ADDR_INFO_HAVE_RETURN_ADDR (1<<1)
+#define ATR_ADDR_INFO_HAVE_SYMBOL (1<<0)
+#define ATR_ADDR_INFO_HAVE_LOCATION (1<<1)
+#define ATR_ADDR_INFO_HAVE_RETURN_ADDR (1<<2)
 
-    struct npr_symbol *path;
-    struct ATR_return_addr_pos return_addr_pos;
+    struct npr_symbol *sym;
+    struct npr_symbol *source_path;
+    uintptr_t return_addr;
+
+    struct ATR_Error sym_lookup_error;
+    struct ATR_Error location_lookup_error;
+    struct ATR_Error frame_lookup_error;
 };
 
-int ATR_file_lookup_addr_info(struct ATR_addr_info *info,
-                              struct ATR *atr,
-                              struct ATR_file *fp,
-                              uintptr_t offset);
+
+void ATR_file_lookup_addr_info(struct ATR_addr_info *info,
+                               struct ATR *atr,
+                               struct ATR_process *proc,
+                               struct ATR_file *fp,
+                               uintptr_t offset);
+
+void ATR_addr_info_fini(struct ATR *atr,
+                        struct ATR_addr_info *info);
 
 #ifdef __cplusplus
 }

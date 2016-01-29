@@ -2,13 +2,17 @@ cmake_minimum_required(VERSION 2.6)
 
 set(ENABLE_WERROR CACHE BOOL OFF)
 
-set(CMAKE_C_FLAGS "-Wall -Wmissing-prototypes")
+set(CMAKE_C_FLAGS "-Wall -Wmissing-prototypes -Werror=incompatible-pointer-types")
 
 if(ENABLE_WERROR)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif()
 
-configure_file (anytrace/config.h.in config.h)
+
+include(TestBigEndian)
+test_big_endian(ANYTRACE_BIG_ENDIAN)
+
+message(aa ${ANYTRACE_BIG_ENDIAN})
 
 include_directories(.)
 include_directories(${CMAKE_BINARY_DIR})
@@ -38,3 +42,6 @@ target_link_libraries(anytrace atr)
 set_property(TARGET anytrace PROPERTY C_STANDARD 99)
 set_property(TARGET atr PROPERTY C_STANDARD 99)
 
+
+
+configure_file (anytrace/config.h.in config.h)

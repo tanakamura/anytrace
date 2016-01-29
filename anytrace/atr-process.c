@@ -228,14 +228,13 @@ ATR_dump_process(FILE *fp,
         ATR_free(atr, str);
         ATR_error_clear(atr, &atr->last_error);
     } else {
-        fprintf(fp, "pc=%16llx (path=%s, offset=%"PRIxPTR")\n",
+        fprintf(fp, "pc=%16llx (path=%s, file_offset=%"PRIxPTR")\n",
                 regs.rip,
                 map.path->symstr,
                 map.offset);
 
-
         struct ATR_file file;
-        int r = ATR_file_open(&file, atr, map.path->symstr);
+        int r = ATR_file_open(&file, atr, map.path);
 
         if (r < 0) {
             ATR_perror(atr);
@@ -255,6 +254,10 @@ ATR_dump_process(FILE *fp,
                 file.debug_info.start + file.debug_info.length,
                 file.eh_frame.start,
                 file.eh_frame.start + file.eh_frame.length);
+
+        struct ATR_addr_info info;
+        ATR_file_lookup_addr_info(&info, atr, proc, &file, map.offset);
+        ATR_addr_info_fini(atr, &info);
 
         ATR_file_close(atr, &file);
     }
