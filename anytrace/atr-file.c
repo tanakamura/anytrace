@@ -202,24 +202,52 @@ read_leb128(unsigned char *ptr,
     return neg ? -ret : ret;
 }
 
-static void
-inc_column_width(uintptr_t **regs,
-                 int *column_width,
-                 uintptr_t max)
-{
-    if (*column_width <= max) {
-        *column_width = max+1;
+struct cfa_reg {
+    int cfa_offset;
+};
 
-        *regs = realloc(*regs, *column_width * sizeof(uintptr_t));
+struct cfa_exec_env {
+    struct cfa_reg *regs;
+
+    int column_width;
+    int cfa_offset;
+    int cfa_reg;
+    int return_address_column;
+};
+
+static void
+reserve_column_width(struct cfa_exec_env *env,
+                     int column)
+{
+    if (env->column_width < column+1) {
+        env->column_width = column + 1;
+        env->regs = realloc(env->regs, env->column_width * sizeof(struct cfa_reg));
     }
 }
 
+static void
+copy_cfa_env(struct cfa_exec_env *dst,
+             const struct cfa_exec_env *src)
+{
+    reserve_column_width(dst, src->column_width);
+
+    memcpy(dst->regs, src->regs,
+           sizeof(src->column_width) * sizeof(struct cfa_reg));
+
+    dst->cfa_offset = src->cfa_offset;
+    dst->cfa_reg = src->cfa_reg;
+    dst->return_address_column = src->return_address_column;
+
+}
+
+
+
 /* return 1 if finished */
 static int
-exec_cfa(unsigned char *base,
+exec_cfa(struct cfa_exec_env *env,
+         unsigned char *base,
          unsigned int *cur,
          unsigned int end,
-         uintptr_t *regs,
          uintptr_t cfa_pc,
          uintptr_t real_pc)
 {
@@ -227,57 +255,69 @@ exec_cfa(unsigned char *base,
     while (*(cur) < end) {
         unsigned int opc = base[*cur];
 
+        //printf("opc = %x\n", opc);
+        (*cur)++;
+
         switch (opc & 0xc0) {
         case 0x40: {
             unsigned int advance_val = opc & 0x3f;
             cfa_pc += advance_val;
-            printf("advance %d (pc=%x, %x)\n", advance_val, (int)cfa_pc, (int)real_pc);
+            //printf("advance %d (pc=%x, %x)\n", advance_val, (int)cfa_pc, (int)real_pc);
             if (cfa_pc >= real_pc) {
                 return 1;
             }
         }
             break;
 
-        case 0x80:
-            printf("dw_cfa_offset %d\n", opc&0x3f);
+        case 0x80: {
+            unsigned int reg = opc & 0x3f;
+            unsigned int off = read_leb128(base, cur);
+
+            reserve_column_width(env, reg);
+
+            env->regs[reg].cfa_offset = off;
+        }
             break;
 
         case 0xc0:
-            puts("dw_cfa_restore");
+            //puts("dw_cfa_restore");
             break;
 
         default:
-            switch (opc) {
+            switch (opc) {      /* def cfa */
             case 0xc: {
-                (*cur)++;
                 signed int reg = read_leb128(base, cur);
                 signed int off = read_leb128(base, cur);
 
-                printf("def_def_cfa %d %d\n", reg, off);
-                (*cur)++;
+                //printf("def_cfa %d %d\n", reg, off);
+
+                env->cfa_reg = reg;
+                env->cfa_offset = off;
             }
                 break;
 
-            case 0xe:{
-                (*cur)++;
+            case 0x09: {        /* def cfa register */
+                signed int reg = read_leb128(base, cur);
+                env->cfa_reg = reg;
+            }
+                break;
+
+            case 0xe:{          /* def cfa offset */
                 unsigned int off = read_leb128(base, cur);
-                printf("def_cfa_offset  %d\n", off);
+                env->cfa_offset = off;
             }
                 break;
 
-            case 0:
-                puts("DW_nop");
+            case 0:             /* nop */
                 break;
 
             default:
                 printf("DW_?? (%x)\n", opc);
                 break;
-
             }
             break;
         }
 
-        (*cur)++;
     }
 
     return 0;
@@ -302,6 +342,14 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
          * 2. extract from debug?
          * 3. extract from 16(%rbp)?
          */
+        struct cfa_exec_env cie_env;
+        struct cfa_exec_env fde_env;
+
+        cie_env.regs = NULL;
+        cie_env.column_width = 0;
+
+        fde_env.regs = NULL;
+        fde_env.column_width = 0;
 
         if (fp->eh_frame.length == 0) {
             ATR_set_frame_info_not_found(atr, &info->frame_lookup_error, fp->path, offset);
@@ -313,13 +361,6 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
         size_t length = fp->eh_frame.length;
         unsigned char *base = fp->mapped_addr + fp->eh_frame.start;
 
-        int column_width = 0;
-        int init_column_width = 0;
-
-        uintptr_t *regs = NULL;
-        uintptr_t *regs_init = NULL;
-        unsigned int return_adderss_column = 0;
-        unsigned int cfa_column = 0;
         unsigned int have_aug = 0;
 
         while (cur < length) {
@@ -339,7 +380,6 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
                  */
                 unsigned int cie_cur = cur + 9;
                 have_aug = 0;
-                puts("CIE");
 
                 while (1){ /* ?? */
                     unsigned int c = base[cie_cur++];
@@ -354,18 +394,16 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
                 read_leb128(base, &cie_cur); /* code alignment factor */
                 read_leb128(base, &cie_cur); /* data lignment factor */
 
-                return_adderss_column = read_leb128(base, &cie_cur); /* return address register */
+                cie_env.return_address_column = read_leb128(base, &cie_cur); /* return address register */
 
-                inc_column_width(&regs, &column_width, return_adderss_column);
-                inc_column_width(&regs_init, &init_column_width, return_adderss_column);
+                reserve_column_width(&cie_env, cie_env.return_address_column);
 
                 if (have_aug) {
                     unsigned int length = read_leb128(base, &cie_cur);
                     cie_cur += length;
                 }
 
-                exec_cfa(base, &cie_cur, cur+length+4, regs_init, 0, offset);
-
+                exec_cfa(&cie_env, base, &cie_cur, cur+length+4, 0, offset);
             } else {
                 uint32_t begin = read4(base + cur + 8);
                 uint32_t range = read4(base + cur + 12);
@@ -375,24 +413,16 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
                 unsigned int fde_cur = cur + 16;
 
                 if (offset>=begin && offset < end) {
-                    puts("FDE");
-
                     if (have_aug) {
                         unsigned int length = read_leb128(base, &fde_cur);
                         fde_cur += length;
                     }
 
-                    int find = exec_cfa(base, &fde_cur, cur+length+4, regs, begin, offset);
+                    copy_cfa_env(&fde_env, &cie_env);
+                    int find = exec_cfa(&fde_env, base, &fde_cur, cur+length+4, begin, offset);
                     if (find) {
-                        
-
                         goto lookup_symbol;
                     }
-
-
-                    printf("fde %"PRIxPTR", addr=%x-%x\n",
-                           cur, begin, end);
-
                 }
                 /* FDE */
             }
@@ -400,21 +430,11 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
             cur += length + 4;
         }
 
-/*
- 1 	length 	4 Byte 	int 	以下、No.2-xの部分のデータサイズ(Byte)です
-2 	CIE_id 	8 Byte(64bit) 	unsigned long 	CIEかFDEかのデータの区別。0xffffffffffffffff ならCIE。それ以外はFDE
-3 	version 	1 Byte 	unsigned char 	.debug_frame情報のバージョン。DWARFのバージョンとは違うものです。
-4 	augmentation 	?(0x00までのデータずっと) 	BinaryData (UTF-8文字列) 	コンパイラ拡張による (通常無視OK？)
-5 	code_alignment_factor 	uLEB128のサイズ 	uLEB128 	CFIルール表の行での命令アドレスのバウンダリサイズ。これが例えば４なら、CFIの各行の命令アドレスも４の倍数になる
-6 	data_alignment_factor 	sLEB128のサイズ 	sLEB128 	先のCIE／FDEの命令にあった offset(N), val_offset(N)を計算する際の、データアドレスのバウンダリ値。この後の命令説明で出て来ます
-7 	return_address_register 	uLEB128のサイズ 	uLEB128 	CFIルール表内のregisterのうち、関数の戻りアドレスを示すレジスタの番号
-8 	initial_instructions 	No.1 length - (No.2-7,9の総和サイズ) 	(後述) 	CFIルール表の「列の定義」と「最初の行のデータ設定」 以下参照
-9 	padding 	No.1 length - (No.2-8の総和サイズ) 	0x00 	単なるパディング 
-*/
-
+lookup_symbol:;
+        free(cie_env.regs);
+        free(fde_env.regs);
     }
 
-lookup_symbol:;
     {
         /* symbol info */
 
