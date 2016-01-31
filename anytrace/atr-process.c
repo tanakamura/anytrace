@@ -16,6 +16,7 @@
 #include "anytrace/atr.h"
 #include "anytrace/atr-process.h"
 #include "anytrace/atr-file.h"
+#include "anytrace/atr-backtrace.h"
 
 int
 ATR_open_process(struct ATR_process *dst,
@@ -256,7 +257,12 @@ ATR_dump_process(FILE *fp,
                 file.eh_frame.start + file.eh_frame.length);
 
         struct ATR_addr_info info;
-        ATR_file_lookup_addr_info(&info, atr, proc, &file, map.offset);
+        struct ATR_backtracer tr;
+
+        ATR_backtrace_init(&tr, proc);
+        ATR_file_lookup_addr_info(&info, atr, &tr, proc, &file);
+
+        ATR_backtrace_fini(&tr);
         ATR_addr_info_fini(atr, &info);
 
         ATR_file_close(atr, &file);

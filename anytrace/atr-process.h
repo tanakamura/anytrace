@@ -12,6 +12,8 @@
 extern "C" {
 #endif
 
+struct ATR;
+
 struct ATR_module {
     struct npr_symbol *path;
 };

@@ -23,6 +23,8 @@ enum ATR_error_code {
 
     ATR_FRAME_INFO_NOT_FOUND,
 
+    ATR_DWARF_UNKNOWN_CFA_REG,
+
     ATR_INVALID_ARGUMENT,
 };
 
@@ -57,6 +59,12 @@ struct ATR_Error {
             struct npr_symbol *path;
             uintptr_t offset;
         } frame_info_not_found;
+
+        struct {
+            unsigned int cfa_reg;
+            struct npr_symbol *path;
+            uintptr_t offset;
+        } dwarf_unknown_cfa_reg;
     }u;
 };
 
@@ -85,6 +93,17 @@ void ATR_set_frame_info_not_found(struct ATR *atr,
                                   struct ATR_Error *e,
                                   struct npr_symbol *path,
                                   uintptr_t offset);
+
+void ATR_set_dwarf_unknown_cfa_reg(struct ATR *atr,
+                                   struct ATR_Error *e,
+                                   unsigned int cfa_reg,
+                                   struct npr_symbol *path,
+                                   uintptr_t offset);
+
+/* move to dst & clear src */
+void ATR_error_move(struct ATR *atr,
+                    struct ATR_Error *dst,
+                    struct ATR_Error *src);
 
 #ifdef __cplusplus
 }

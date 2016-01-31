@@ -2,12 +2,14 @@
 #define ATR_FILE_H
 
 #include "npr/symbol.h"
+#include "anytrace/atr-errors.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct ATR_process;
+struct ATR_backtracer;
 
 struct ATR_section {
     uintptr_t length;           // 0 if empty
@@ -46,9 +48,9 @@ struct ATR_addr_info {
 
 void ATR_file_lookup_addr_info(struct ATR_addr_info *info,
                                struct ATR *atr,
+                               struct ATR_backtracer *tr,
                                struct ATR_process *proc,
-                               struct ATR_file *fp,
-                               uintptr_t offset);
+                               struct ATR_file *fp);
 
 void ATR_addr_info_fini(struct ATR *atr,
                         struct ATR_addr_info *info);

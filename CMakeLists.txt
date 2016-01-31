@@ -31,6 +31,7 @@ add_library(atr
   anytrace/atr.c
   anytrace/atr-process.c
   anytrace/atr-file.c
+  anytrace/atr-backtrace.c
   )
 
 add_executable(anytrace

@@ -14,6 +14,7 @@ ATR_error_clear(struct ATR *atr, struct ATR_Error *e)
     case ATR_YAMA_ENABLED:
     case ATR_MAP_NOT_FOUND:
     case ATR_FRAME_INFO_NOT_FOUND:
+    case ATR_DWARF_UNKNOWN_CFA_REG:
         break;
 
     case ATR_LIBC_PATH_ERROR:
@@ -84,10 +85,19 @@ ATR_strerror(struct ATR *atr, struct ATR_Error *e)
 
     case ATR_FRAME_INFO_NOT_FOUND:
         npr_strbuf_printf(&sb,
-                          "frame info not found(path=%s, offset=%016"PRIxPTR")",
+                          "frame info not found(path=%s, pc=%016"PRIxPTR")",
                           e->u.frame_info_not_found.path->symstr,
                           e->u.frame_info_not_found.offset);
         break;
+
+    case ATR_DWARF_UNKNOWN_CFA_REG:
+        npr_strbuf_printf(&sb,
+                          "(DWARF)unknown cfa reg %d(path=%s, offset=%016"PRIxPTR")",
+                          e->u.dwarf_unknown_cfa_reg.cfa_reg,
+                          e->u.dwarf_unknown_cfa_reg.path->symstr,
+                          e->u.dwarf_unknown_cfa_reg.offset);
+        break;
+
     }
 
     char *ret = npr_strbuf_strdup(&sb);
@@ -158,4 +168,33 @@ ATR_set_frame_info_not_found(struct ATR *atr,
     e->u.frame_info_not_found.path = path;
     e->u.frame_info_not_found.offset = offset;
 
+}
+
+void
+ATR_set_dwarf_unknown_cfa_reg(struct ATR *atr,
+                              struct ATR_Error *e,
+                              unsigned int cfa_reg,
+                              struct npr_symbol *path,
+                              uintptr_t offset)
+{
+    ATR_error_clear(atr, e);
+
+    e->code = ATR_DWARF_UNKNOWN_CFA_REG;
+
+    e->u.dwarf_unknown_cfa_reg.cfa_reg = cfa_reg;
+    e->u.dwarf_unknown_cfa_reg.path = path;
+    e->u.dwarf_unknown_cfa_reg.offset = offset;
+}
+
+
+/* move to dst & clear src */
+void
+ATR_error_move(struct ATR *atr,
+               struct ATR_Error *dst,
+               struct ATR_Error *src)
+{
+    ATR_error_clear(atr, dst);
+    memcpy(dst, src, sizeof(*dst));
+
+    src->code = ATR_NO_ERROR;
 }
