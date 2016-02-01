@@ -15,6 +15,7 @@ ATR_error_clear(struct ATR *atr, struct ATR_Error *e)
     case ATR_MAP_NOT_FOUND:
     case ATR_FRAME_INFO_NOT_FOUND:
     case ATR_DWARF_UNKNOWN_CFA_REG:
+    case ATR_READ_FRAME_FAILED:
         break;
 
     case ATR_LIBC_PATH_ERROR:
@@ -96,6 +97,13 @@ ATR_strerror(struct ATR *atr, struct ATR_Error *e)
                           e->u.dwarf_unknown_cfa_reg.cfa_reg,
                           e->u.dwarf_unknown_cfa_reg.path->symstr,
                           e->u.dwarf_unknown_cfa_reg.offset);
+        break;
+
+    case ATR_READ_FRAME_FAILED:
+        npr_strbuf_printf(&sb,
+                          "read frame failed (addr=%016"PRIxPTR", errno=%s)",
+                          e->u.read_frame_failed.addr,
+                          strerror(e->u.read_frame_failed.errno_));
         break;
 
     }
@@ -197,4 +205,18 @@ ATR_error_move(struct ATR *atr,
     memcpy(dst, src, sizeof(*dst));
 
     src->code = ATR_NO_ERROR;
+}
+
+void
+ATR_set_read_frame_failed(struct ATR *atr,
+                          struct ATR_Error *e,
+                          uintptr_t addr,
+                          int errno_)
+{
+    ATR_error_clear(atr, e);
+
+    e->code = ATR_READ_FRAME_FAILED;
+
+    e->u.read_frame_failed.addr = addr;
+    e->u.read_frame_failed.errno_ = errno_;
 }

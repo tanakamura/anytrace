@@ -22,6 +22,7 @@ enum ATR_error_code {
     ATR_UNKNOWN_MAPPED_FILE_TYPE,
 
     ATR_FRAME_INFO_NOT_FOUND,
+    ATR_READ_FRAME_FAILED,
 
     ATR_DWARF_UNKNOWN_CFA_REG,
 
@@ -65,6 +66,11 @@ struct ATR_Error {
             struct npr_symbol *path;
             uintptr_t offset;
         } dwarf_unknown_cfa_reg;
+
+        struct {
+            uintptr_t addr;
+            int errno_;
+        } read_frame_failed;
     }u;
 };
 
@@ -99,6 +105,11 @@ void ATR_set_dwarf_unknown_cfa_reg(struct ATR *atr,
                                    unsigned int cfa_reg,
                                    struct npr_symbol *path,
                                    uintptr_t offset);
+
+void ATR_set_read_frame_failed(struct ATR *atr,
+                               struct ATR_Error *e,
+                               uintptr_t addr,
+                               int errno_);
 
 /* move to dst & clear src */
 void ATR_error_move(struct ATR *atr,

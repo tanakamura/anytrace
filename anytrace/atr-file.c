@@ -93,10 +93,14 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
     fp->debug_abbrev.length = 0;
     fp->debug_info.length = 0;
     fp->eh_frame.length = 0;
+    fp->symtab.length = 0;
+
     fp->text.start = 0;
     fp->debug_abbrev.start = 0;
     fp->debug_info.start = 0;
     fp->eh_frame.start = 0;
+    fp->symtab.start = 0;
+
     fp->path = path;
 
     for (int si=0; si<e_shnum; si++) {
@@ -115,6 +119,7 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
         SET_SECTION(debug_abbrev, ".debug_abbrev");
         SET_SECTION(debug_info, ".debug_info");
         SET_SECTION(eh_frame, ".eh_frame");
+        SET_SECTION(symtab, ".symtab");
     }
 
     return 0;
@@ -136,26 +141,13 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
 {
     info->sym_lookup_error.code = ATR_NO_ERROR;
     info->location_lookup_error.code = ATR_NO_ERROR;
-    info->frame_lookup_error.code = ATR_NO_ERROR;
 
-
-    {
-        /* symbol info */
-
-        /* 1. extract from .debug_info?
-         * 2. extract from .symtab
-         * 3. extract from .dynsym
-         */
-    }
+    /* 1. symtab
+     * 2. dynsym
+     */
 
     
-lookup_location:;
-    {
-        /* location info */
 
-        /* 1. extract from .debug_info? */
-        
-    }
 
     return;
 }

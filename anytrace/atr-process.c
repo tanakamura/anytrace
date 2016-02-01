@@ -260,7 +260,10 @@ ATR_dump_process(FILE *fp,
         struct ATR_backtracer tr;
 
         ATR_backtrace_init(&tr, proc);
-        ATR_file_lookup_addr_info(&info, atr, &tr, proc, &file);
+        r = ATR_backtrace_up(atr, &tr, &file, proc);
+        printf("%d\n", r);
+
+        //ATR_file_lookup_addr_info(&info, atr, &tr, proc, &file);
 
         ATR_backtrace_fini(&tr);
         ATR_addr_info_fini(atr, &info);

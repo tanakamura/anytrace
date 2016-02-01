@@ -171,7 +171,7 @@ exec_cfa(struct cfa_exec_env *env,
     while (*(cur) < end) {
         unsigned int opc = base[*cur];
 
-        //printf("opc = %x\n", opc);
+        printf("opc = %x\n", opc);
         (*cur)++;
 
         switch (opc & 0xc0) {
@@ -187,14 +187,11 @@ exec_cfa(struct cfa_exec_env *env,
 
         case 0x80: {
             int reg = opc & 0x3f;
-            printf("%x %x %x\n",
-                   base[*cur],
-                   base[*cur+1],
-                   base[*cur+2]);
-
             int off = read_leb128(base, cur);
             reserve_column_width(env, reg);
             env->regs[reg].cfa_offset = off * env->data_align;
+
+            printf("reg=%x off=%x\n", reg, off);
         }
             break;
 
@@ -255,7 +252,7 @@ ATR_backtrace_up(struct ATR *atr,
      */
     struct cfa_exec_env cie_env;
     struct cfa_exec_env fde_env;
-    uintptr_t pc = tr->cfa_regs[X86_CFA_REG_RIP];
+    uintptr_t pc = tr->cfa_regs[X8664_CFA_REG_RIP];
     uintptr_t pc_offset = 0;
     struct ATR_map_info mapi;
 
@@ -263,6 +260,8 @@ ATR_backtrace_up(struct ATR *atr,
     if (r != 0) {
         return -1;
     }
+
+    pc_offset = mapi.offset;
 
     cie_env.regs = NULL;
     cie_env.column_width = 0;
@@ -341,56 +340,58 @@ ATR_backtrace_up(struct ATR *atr,
                 copy_cfa_env(&fde_env, &cie_env);
                 int find = exec_cfa(&fde_env, base, &fde_cur, cur+length+4, begin, pc_offset);
                 if (find) {
-                    {
-                        struct user_regs_struct regs;
-                        int r = ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs);
-                        if (r == -1) {
-                            ATR_set_libc_path_error(atr,
-                                                    &atr->last_error,
-                                                    errno, "ptrace");
-                            goto fini;
-                        }
-
-                        uintptr_t cfa_val = 0;
-                        switch(fde_env.cfa_reg) {
-                        case 0: cfa_val = regs.rax; break;
-                        case 1: cfa_val = regs.rdx; break;
-                        case 2: cfa_val = regs.rcx; break;
-                        case 3: cfa_val = regs.rbx; break;
-                        case 4: cfa_val = regs.rsi; break;
-                        case 5: cfa_val = regs.rdi; break;
-                        case 6: cfa_val = regs.rbp; break;
-                        case 7: cfa_val = regs.rsp; break;
-
-                        default:
-                            ATR_set_dwarf_unknown_cfa_reg(atr,
-                                                          &atr->last_error,
-                                                          fde_env.cfa_reg,
-                                                          fp->path,
-                                                          pc);
-                            break;
-                        }
-
-                        uintptr_t cfa_top = cfa_val + fde_env.cfa_offset;
-                        uintptr_t ret_addr_pos = cfa_top + fde_env.regs[fde_env.return_address_column].cfa_offset;
-
-                        printf("cfa=%d, offset=%d, return=%d, return_offset=%d, fp=%p, addr=%p\n",
-                               fde_env.cfa_reg,
-                               fde_env.cfa_offset,
-                               fde_env.return_address_column,
-                               fde_env.regs[fde_env.return_address_column].cfa_offset,
-                               (void*)regs.rsp,
-                               (void*)ret_addr_pos
-                            );
-
-                        uintptr_t return_addr;
-                        ptrace(PTRACE_PEEKUSER, proc->pid,
-                               (void*)ret_addr_pos, &return_addr);
-
+                    struct user_regs_struct regs;
+                    int r = ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs);
+                    if (r == -1) {
+                        ATR_set_libc_path_error(atr,
+                                                &atr->last_error,
+                                                errno, "ptrace");
+                        goto fini;
                     }
 
+                    uintptr_t cfa_val = 0;
+                    switch(fde_env.cfa_reg) {
+                    case 0: cfa_val = regs.rax; break;
+                    case 1: cfa_val = regs.rdx; break;
+                    case 2: cfa_val = regs.rcx; break;
+                    case 3: cfa_val = regs.rbx; break;
+                    case 4: cfa_val = regs.rsi; break;
+                    case 5: cfa_val = regs.rdi; break;
+                    case 6: cfa_val = regs.rbp; break;
+                    case 7: cfa_val = regs.rsp; break;
+
+                    default:
+                        ATR_set_dwarf_unknown_cfa_reg(atr,
+                                                      &atr->last_error,
+                                                      fde_env.cfa_reg,
+                                                      fp->path,
+                                                      pc);
+                        break;
+                    }
+
+                    uintptr_t cfa_top = cfa_val + fde_env.cfa_offset;
+                    uintptr_t ret_addr_pos = cfa_top + fde_env.regs[fde_env.return_address_column].cfa_offset;
+
+                    uintptr_t return_addr;
+                    errno = 0;
+                    return_addr = ptrace(PTRACE_PEEKDATA, proc->pid,
+                                         (void*)ret_addr_pos, 0);
+
+                    if (errno != 0) {
+                        ATR_set_read_frame_failed(atr, &atr->last_error,
+                                                  ret_addr_pos, errno);
+
+                        goto fini;
+                    }
+
+                    tr->cfa_regs[X8664_CFA_REG_RIP] = return_addr;
+                    tr->cfa_regs[X8664_CFA_REG_RSP] = ret_addr_pos + 8;
+
+                    ret = 0;
                     goto fini;
                 }
+
+                goto fini;
             }
             /* FDE */
         }
@@ -399,7 +400,7 @@ ATR_backtrace_up(struct ATR *atr,
     }
 
     ATR_set_frame_info_not_found(atr, &atr->last_error, fp->path, pc);
-        
+
 fini:
     free(fde_env.regs);
     free(cie_env.regs);

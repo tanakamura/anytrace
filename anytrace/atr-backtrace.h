@@ -9,7 +9,8 @@ extern "C" {
 
 #define ATR_TRACER_NUM_REG 18
 
-#define X86_CFA_REG_RIP 17
+#define X8664_CFA_REG_RIP 16
+#define X8664_CFA_REG_RSP 7
 
 struct ATR_backtracer {
     uint64_t cfa_regs[ATR_TRACER_NUM_REG];      // stored in dwarf order

@@ -23,7 +23,7 @@ struct ATR_file {
     size_t mapped_length;
     unsigned char *mapped_addr;
 
-    struct ATR_section text, debug_abbrev, debug_info, eh_frame;
+    struct ATR_section text, debug_abbrev, debug_info, eh_frame, symtab;
 };
 
 /* return negative if failed */
@@ -34,15 +34,13 @@ struct ATR_addr_info {
     int flags;
 #define ATR_ADDR_INFO_HAVE_SYMBOL (1<<0)
 #define ATR_ADDR_INFO_HAVE_LOCATION (1<<1)
-#define ATR_ADDR_INFO_HAVE_RETURN_ADDR (1<<2)
 
     struct npr_symbol *sym;
+    uintptr_t sym_offset;
     struct npr_symbol *source_path;
-    uintptr_t return_addr;
 
     struct ATR_Error sym_lookup_error;
     struct ATR_Error location_lookup_error;
-    struct ATR_Error frame_lookup_error;
 };
 
 
