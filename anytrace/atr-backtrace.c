@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <dwarf.h>
 
 #include "anytrace/atr.h"
 #include "anytrace/atr-process.h"
@@ -100,12 +101,30 @@ struct cfa_exec_env {
 };
 
 static void
+dump_cfa_exec_env(struct cfa_exec_env *env)
+{
+    printf("cfa_offset = %d\n", env->cfa_offset);
+    printf("cfa_reg = %d\n", env->cfa_reg);
+    printf("nreg = %d\n", env->column_width);
+    for (int ri=0; ri<env->column_width; ri++) {
+        printf("reg[%3d] = %8d\n", ri, env->regs[ri].cfa_offset);
+    }
+}
+
+static void
 reserve_column_width(struct cfa_exec_env *env,
                      int column)
 {
     if (env->column_width < column+1) {
+        int prev = env->column_width;
+
         env->column_width = column + 1;
         env->regs = realloc(env->regs, env->column_width * sizeof(struct cfa_reg));
+
+        for (int ri=prev; ri<column+1; ri++) {
+            env->regs[ri].cfa_offset = 0;
+        }
+
     }
 }
 
@@ -171,11 +190,13 @@ exec_cfa(struct cfa_exec_env *env,
     while (*(cur) < end) {
         unsigned int opc = base[*cur];
 
-        printf("opc = %x\n", opc);
+        printf("%08x:opc = %x\n", *cur, opc);
+        //dump_cfa_exec_env(env);
+
         (*cur)++;
 
         switch (opc & 0xc0) {
-        case 0x40: {
+        case DW_CFA_advance_loc: {
             unsigned int advance_val = opc & 0x3f;
             cfa_pc += advance_val;
             printf("advance %d (pc=%x, %x)\n", advance_val, (int)cfa_pc, (int)real_pc);
@@ -185,7 +206,7 @@ exec_cfa(struct cfa_exec_env *env,
         }
             break;
 
-        case 0x80: {
+        case DW_CFA_offset: {
             int reg = opc & 0x3f;
             int off = read_leb128(base, cur);
             reserve_column_width(env, reg);
@@ -195,13 +216,13 @@ exec_cfa(struct cfa_exec_env *env,
         }
             break;
 
-        case 0xc0:
+        case DW_CFA_restore:
             //puts("dw_cfa_restore");
             break;
 
         default:
-            switch (opc) {      /* def cfa */
-            case 0xc: {
+            switch (opc) {
+            case DW_CFA_def_cfa: {
                 signed int reg = read_leb128(base, cur);
                 signed int off = read_leb128(base, cur);
 
@@ -210,19 +231,19 @@ exec_cfa(struct cfa_exec_env *env,
             }
                 break;
 
-            case 0x09: {        /* def cfa register */
+            case DW_CFA_register: {        /* def cfa register */
                 signed int reg = read_leb128(base, cur);
                 env->cfa_reg = reg;
             }
                 break;
 
-            case 0xe:{          /* def cfa offset */
+            case DW_CFA_def_cfa_offset:{          /* def cfa offset */
                 unsigned int off = read_leb128(base, cur);
                 env->cfa_offset = off;
             }
                 break;
 
-            case 0:             /* nop */
+            case DW_CFA_nop:             /* nop */
                 break;
 
             default:
@@ -338,59 +359,60 @@ ATR_backtrace_up(struct ATR *atr,
                 }
 
                 copy_cfa_env(&fde_env, &cie_env);
-                int find = exec_cfa(&fde_env, base, &fde_cur, cur+length+4, begin, pc_offset);
-                if (find) {
-                    struct user_regs_struct regs;
-                    int r = ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs);
-                    if (r == -1) {
-                        ATR_set_libc_path_error(atr,
-                                                &atr->last_error,
-                                                errno, "ptrace");
-                        goto fini;
-                    }
+                printf("fde = %x, cur = %x, pc = %x\n", fde_cur, cur, pc_offset);
 
-                    uintptr_t cfa_val = 0;
-                    switch(fde_env.cfa_reg) {
-                    case 0: cfa_val = regs.rax; break;
-                    case 1: cfa_val = regs.rdx; break;
-                    case 2: cfa_val = regs.rcx; break;
-                    case 3: cfa_val = regs.rbx; break;
-                    case 4: cfa_val = regs.rsi; break;
-                    case 5: cfa_val = regs.rdi; break;
-                    case 6: cfa_val = regs.rbp; break;
-                    case 7: cfa_val = regs.rsp; break;
-
-                    default:
-                        ATR_set_dwarf_unknown_cfa_reg(atr,
-                                                      &atr->last_error,
-                                                      fde_env.cfa_reg,
-                                                      fp->path,
-                                                      pc);
-                        break;
-                    }
-
-                    uintptr_t cfa_top = cfa_val + fde_env.cfa_offset;
-                    uintptr_t ret_addr_pos = cfa_top + fde_env.regs[fde_env.return_address_column].cfa_offset;
-
-                    uintptr_t return_addr;
-                    errno = 0;
-                    return_addr = ptrace(PTRACE_PEEKDATA, proc->pid,
-                                         (void*)ret_addr_pos, 0);
-
-                    if (errno != 0) {
-                        ATR_set_read_frame_failed(atr, &atr->last_error,
-                                                  ret_addr_pos, errno);
-
-                        goto fini;
-                    }
-
-                    tr->cfa_regs[X8664_CFA_REG_RIP] = return_addr;
-                    tr->cfa_regs[X8664_CFA_REG_RSP] = ret_addr_pos + 8;
-
-                    ret = 0;
+                exec_cfa(&fde_env, base, &fde_cur, cur+length+4, begin, pc_offset);
+                struct user_regs_struct regs;
+                int r = ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs);
+                if (r == -1) {
+                    ATR_set_libc_path_error(atr,
+                                            &atr->last_error,
+                                            errno, "ptrace");
                     goto fini;
                 }
 
+                uintptr_t cfa_val = 0;
+                switch(fde_env.cfa_reg) {
+                case 0: cfa_val = regs.rax; break;
+                case 1: cfa_val = regs.rdx; break;
+                case 2: cfa_val = regs.rcx; break;
+                case 3: cfa_val = regs.rbx; break;
+                case 4: cfa_val = regs.rsi; break;
+                case 5: cfa_val = regs.rdi; break;
+                case 6: cfa_val = regs.rbp; break;
+                case 7: cfa_val = regs.rsp; break;
+
+                default:
+                    ATR_set_dwarf_unknown_cfa_reg(atr,
+                                                  &atr->last_error,
+                                                  fde_env.cfa_reg,
+                                                  fp->path,
+                                                  pc);
+                    break;
+                }
+
+                uintptr_t cfa_top = cfa_val + fde_env.cfa_offset;
+                uintptr_t ret_addr_pos = cfa_top + fde_env.regs[fde_env.return_address_column].cfa_offset;
+
+                uintptr_t return_addr;
+                errno = 0;
+                return_addr = ptrace(PTRACE_PEEKDATA, proc->pid,
+                                     (void*)ret_addr_pos, 0);
+
+                if (errno != 0) {
+                    ATR_set_read_frame_failed(atr, &atr->last_error,
+                                              ret_addr_pos, errno);
+
+                    goto fini;
+                }
+
+                tr->cfa_regs[X8664_CFA_REG_RIP] = return_addr;
+                tr->cfa_regs[X8664_CFA_REG_RSP] = ret_addr_pos + 8;
+
+                printf("return_addr=%x, ret_addr_pos=%x\n",
+                       return_addr, ret_addr_pos);
+
+                ret = 0;
                 goto fini;
             }
             /* FDE */

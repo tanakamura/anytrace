@@ -158,5 +158,5 @@ ATR_addr_info_fini(struct ATR *atr,
 {
     ATR_error_clear(atr, &info->sym_lookup_error);
     ATR_error_clear(atr, &info->location_lookup_error);
-    ATR_error_clear(atr, &info->frame_lookup_error);
 }
+

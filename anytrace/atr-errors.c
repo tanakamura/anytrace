@@ -60,7 +60,7 @@ ATR_strerror(struct ATR *atr, struct ATR_Error *e)
 
     case ATR_YAMA_ENABLED:
         npr_strbuf_printf(&sb,
-                          "yama is enabled. you should set /proc/sys/kernel/yama to '0'");
+                          "yama is enabled. you should set /proc/sys/kernel/yama/ptrace_scope to '0'");
         break;
 
     case ATR_INVALID_ARGUMENT:
