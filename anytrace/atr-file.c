@@ -112,7 +112,6 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
         if (strcmp(name,sec_name) == 0) {            \
             fp->st_name.length = sh->sh_size;        \
             fp->st_name.start = sh->sh_offset;                          \
-            fprintf(stderr, "%s : %x %x\n", sec_name, (int)sh->sh_size, (int)sh->sh_offset); \
         }
 
         SET_SECTION(text, ".text");

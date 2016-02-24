@@ -10,12 +10,18 @@ endif()
 
 
 include(TestBigEndian)
-test_big_endian(ANYTRACE_BIG_ENDIAN)
+include(CheckIncludeFile)
 
-message(aa ${ANYTRACE_BIG_ENDIAN})
+test_big_endian(ANYTRACE_BIG_ENDIAN)
 
 include_directories(.)
 include_directories(${CMAKE_BINARY_DIR})
+
+check_include_file(dwarf.h HAVE_DWARF_H)
+
+if (NOT HAVE_DWARF_H)
+  message("please install libdwarf-dev (dwarf.h not found)")
+endif()
 
 add_library(npr
   npr/int-map.c

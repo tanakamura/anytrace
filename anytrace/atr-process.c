@@ -104,7 +104,7 @@ ATR_open_process(struct ATR_process *dst,
             if (c == '\n') {
                 break;
             }
-            
+
             npr_strbuf_putc(&path_buf, c);
         }
 
@@ -260,8 +260,12 @@ ATR_dump_process(FILE *fp,
         struct ATR_backtracer tr;
 
         ATR_backtrace_init(&tr, proc);
-        r = ATR_backtrace_up(atr, &tr, &file, proc);
-        printf("%d\n", r);
+        for (int depth=0; depth<20; depth++) {
+            r = ATR_backtrace_up(atr, &tr, proc);
+            if (r != 0) {
+                break;
+            }
+        }
 
         //ATR_file_lookup_addr_info(&info, atr, &tr, proc, &file);
 

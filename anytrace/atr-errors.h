@@ -25,6 +25,7 @@ enum ATR_error_code {
     ATR_READ_FRAME_FAILED,
 
     ATR_DWARF_UNKNOWN_CFA_REG,
+    ATR_DWARF_UNIMPLEMENTED_CFA_OP,
 
     ATR_INVALID_ARGUMENT,
 };
@@ -71,6 +72,10 @@ struct ATR_Error {
             uintptr_t addr;
             int errno_;
         } read_frame_failed;
+
+        struct {
+            unsigned int opc;
+        } dwarf_unimplemented_op;
     }u;
 };
 
@@ -80,6 +85,11 @@ char *ATR_strerror(struct ATR *atr, struct ATR_Error *e);
 void ATR_set_error_code(struct ATR *atr,
                         struct ATR_Error *e,
                         enum ATR_error_code c);
+
+void ATR_set_dwarf_unimplemented_cfa_op(struct ATR *atr,
+                                        struct ATR_Error *e,
+                                        unsigned int opc);
+
 void ATR_set_libc_path_error(struct ATR *atr,
                              struct ATR_Error *e,
                              int errno_,

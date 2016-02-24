@@ -26,7 +26,6 @@ void ATR_backtrace_init(struct ATR_backtracer *tr,
 /* return -1 if failed */
 int ATR_backtrace_up(struct ATR *atr,
                      struct ATR_backtracer *tr,
-                     struct ATR_file *file,
                      struct ATR_process *proc);
 
 void ATR_backtrace_fini(struct ATR_backtracer *tr);

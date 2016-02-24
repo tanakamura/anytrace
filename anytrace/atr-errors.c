@@ -16,6 +16,7 @@ ATR_error_clear(struct ATR *atr, struct ATR_Error *e)
     case ATR_FRAME_INFO_NOT_FOUND:
     case ATR_DWARF_UNKNOWN_CFA_REG:
     case ATR_READ_FRAME_FAILED:
+    case ATR_DWARF_UNIMPLEMENTED_CFA_OP:
         break;
 
     case ATR_LIBC_PATH_ERROR:
@@ -34,6 +35,7 @@ ATR_error_clear(struct ATR *atr, struct ATR_Error *e)
 
     e->code = ATR_NO_ERROR;
 }
+
 char *
 ATR_strerror(struct ATR *atr, struct ATR_Error *e)
 {
@@ -97,6 +99,12 @@ ATR_strerror(struct ATR *atr, struct ATR_Error *e)
                           e->u.dwarf_unknown_cfa_reg.cfa_reg,
                           e->u.dwarf_unknown_cfa_reg.path->symstr,
                           e->u.dwarf_unknown_cfa_reg.offset);
+        break;
+
+    case ATR_DWARF_UNIMPLEMENTED_CFA_OP:
+        npr_strbuf_printf(&sb,
+                          "(DWARF)unimplemented cfa op(opc = %x)",
+                          e->u.dwarf_unimplemented_op.opc);
         break;
 
     case ATR_READ_FRAME_FAILED:
@@ -220,3 +228,13 @@ ATR_set_read_frame_failed(struct ATR *atr,
     e->u.read_frame_failed.addr = addr;
     e->u.read_frame_failed.errno_ = errno_;
 }
+
+void
+ATR_set_dwarf_unimplemented_cfa_op(struct ATR *atr,
+                                   struct ATR_Error *e,
+                                   unsigned int opc)
+{
+    ATR_set_error_code(atr, e, ATR_DWARF_UNIMPLEMENTED_CFA_OP);
+    e->u.dwarf_unimplemented_op.opc = opc;
+}
+
