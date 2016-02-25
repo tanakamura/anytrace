@@ -30,6 +30,7 @@ add_library(npr
   npr/chunk-alloc.c
   npr/varray.c
   npr/symbol.c
+  npr/red-black-tree.c
 )
 
 add_library(atr
@@ -50,5 +51,6 @@ set_property(TARGET anytrace PROPERTY C_STANDARD 99)
 set_property(TARGET atr PROPERTY C_STANDARD 99)
 
 
+add_subdirectory(npr/test)
 
 configure_file (anytrace/config.h.in config.h)

@@ -25,7 +25,6 @@ void *npr_chunk_allocator_alloc(struct npr_chunk_allocator *a);
 void npr_chunk_allocator_free(struct npr_chunk_allocator *a, void *data);
 
 void npr_chunk_allocator_stat(FILE *out, struct npr_chunk_allocator *a);
-                              
 
 #ifdef __cplusplus
 }
