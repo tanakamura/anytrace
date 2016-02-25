@@ -12,6 +12,7 @@
 
 #include "npr/strbuf.h"
 #include "npr/varray.h"
+#include "npr/red-black-tree.h"
 
 #include "anytrace/atr.h"
 #include "anytrace/atr-process.h"
@@ -256,21 +257,29 @@ ATR_dump_process(FILE *fp,
                 file.eh_frame.start,
                 file.eh_frame.start + file.eh_frame.length);
 
-        struct ATR_addr_info info;
         struct ATR_backtracer tr;
 
+        struct npr_rbtree visited;
+        npr_rbtree_init(&visited);
+
         ATR_backtrace_init(&tr, proc);
-        for (int depth=0; depth<20; depth++) {
+        while (1) {
+            int insert = npr_rbtree_insert(&visited, tr.cfa_regs[X8664_CFA_REG_RSP], 1);
+
+            if (insert == 0) {
+                /* detect loop */
+                break;
+            }
+
             r = ATR_backtrace_up(atr, &tr, proc);
             if (r != 0) {
                 break;
             }
         }
 
-        //ATR_file_lookup_addr_info(&info, atr, &tr, proc, &file);
+        npr_rbtree_fini(&visited);
 
         ATR_backtrace_fini(&tr);
-        ATR_addr_info_fini(atr, &info);
 
         ATR_file_close(atr, &file);
     }

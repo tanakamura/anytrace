@@ -22,9 +22,11 @@ struct npr_rbtree {
 void npr_rbtree_init(struct npr_rbtree *t);
 void npr_rbtree_fini(struct npr_rbtree *t);
 
-void npr_rbtree_insert(struct npr_rbtree *t,
-                       npr_rbtree_key_t key,
-                       npr_rbtree_value_t v);
+/* return 1 if inserted, or
+ * return 0 if tree already has key. (value will be updated) */
+int npr_rbtree_insert(struct npr_rbtree *t,
+                      npr_rbtree_key_t key,
+                      npr_rbtree_value_t v);
 
 void npr_rbtree_delete(struct npr_rbtree *t, npr_rbtree_key_t key);
 

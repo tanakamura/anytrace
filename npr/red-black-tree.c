@@ -96,7 +96,8 @@ is_red(struct npr_rbtree_node *n)
 static struct npr_rbtree_node *
 insert(struct npr_rbtree *t, struct npr_rbtree_node *n,
        npr_rbtree_key_t key,
-       npr_rbtree_value_t v)
+       npr_rbtree_value_t v,
+       int *insert_new)
 {
     if (n == NULL) {
         n = alloc_node(t);
@@ -105,6 +106,7 @@ insert(struct npr_rbtree *t, struct npr_rbtree_node *n,
         n->v = v;
         n->key = key;
         n->color = RED;
+        *insert_new = 1;
 
         return n;
     }
@@ -116,9 +118,9 @@ insert(struct npr_rbtree *t, struct npr_rbtree_node *n,
     if (key == n->key) {
         n->v = v;
     } else if (key < n->key) {
-        n->left = insert(t, n->left, key, v);
+        n->left = insert(t, n->left, key, v, insert_new);
     } else {
-        n->right = insert(t, n->right, key, v);
+        n->right = insert(t, n->right, key, v, insert_new);
     }
 
     if (is_red(n->right)) {
@@ -133,13 +135,16 @@ insert(struct npr_rbtree *t, struct npr_rbtree_node *n,
 }
 
 
-void
+int
 npr_rbtree_insert(struct npr_rbtree *t, npr_rbtree_key_t key, npr_rbtree_value_t v)
 {
-    struct npr_rbtree_node *root = insert(t, t->root, key, v);
+    int insert_new = 0;
+    struct npr_rbtree_node *root = insert(t, t->root, key, v, &insert_new);
 
     t->root = root;
     root->color = BLACK;
+
+    return insert_new;
 }
 
 
