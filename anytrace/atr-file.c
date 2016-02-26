@@ -107,7 +107,6 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
         Elf_Shdr *sh = (Elf_Shdr*)(base + e_shoff + e_shentsize * si);
         char *name = (char*)(strtab + sh->sh_name);
 
-
 #define SET_SECTION(st_name, sec_name)               \
         if (strcmp(name,sec_name) == 0) {            \
             fp->st_name.length = sh->sh_size;        \
@@ -147,7 +146,6 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
 
     
 
-
     return;
 }
 
@@ -158,4 +156,3 @@ ATR_addr_info_fini(struct ATR *atr,
     ATR_error_clear(atr, &info->sym_lookup_error);
     ATR_error_clear(atr, &info->location_lookup_error);
 }
-

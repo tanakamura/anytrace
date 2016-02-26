@@ -74,7 +74,7 @@ read_leb128(unsigned char *ptr,
         signed int val = ptr[(*cur)++];
 
         ret |= (val & 0x7f) << shift;
-        if ((ret & 0x80) == 0) {
+        if (val & 0x80) {
             break;
         }
 
@@ -103,7 +103,7 @@ read_uleb128(unsigned char *ptr,
         unsigned int val = ptr[(*cur)++];
 
         ret |= (val & 0x7f) << shift;
-        if ((ret & 0x80) == 0) {
+        if (val & 0x80) {
             break;
         }
 
@@ -326,7 +326,7 @@ ATR_backtrace_up(struct ATR *atr,
     if (r != 0) {
         return -1;
     }
-    //printf("pc = %llx\n", pc);
+    printf("file=%s, pc = %llx\n", mapi.path->symstr, pc);
 
     r = ATR_file_open(&fp, atr, mapi.path);
     if (r != 0) {
@@ -395,17 +395,17 @@ ATR_backtrace_up(struct ATR *atr,
                 cie_cur += length;
             }
 
-            //printf("cie = %x, cur = %x, pc = %x\n", (int)cie_cur, (int)cur, (int)pc_offset);
+            printf("cie = %x, cur = %x, pc = %x\n", (int)cie_cur, (int)cur, (int)pc_offset);
             r = exec_cfa(atr, &cie_env, base, &cie_cur, cur+length+4, 0, pc_offset);
             if (r < 0) {
                 goto fini;
             }
 
         } else {
-            uint32_t begin = read4(base + cur + 8);
+            uint32_t begin0 = read4(base + cur + 8);
             uint32_t range = read4(base + cur + 12);
 
-            begin = (uint32_t)(fp.eh_frame.start + cur + 8 + begin);
+            uint32_t begin = (uint32_t)(fp.eh_frame.start + cur + 8 + begin0);
             uint32_t end = begin + range;
             unsigned int fde_cur = cur + 16;
 
@@ -416,7 +416,7 @@ ATR_backtrace_up(struct ATR *atr,
                 }
 
                 copy_cfa_env(&fde_env, &cie_env);
-                //printf("fde = %x, cur = %x, pc = %x\n", (int)fde_cur, (int)cur, (int)pc_offset);
+                printf("fde = %x, cur = %x, pc = %x\n", (int)fde_cur, (int)cur, (int)pc_offset);
 
                 int r = exec_cfa(atr, &fde_env, base, &fde_cur, cur+length+4, begin, pc_offset);
                 if (r == -1) {
