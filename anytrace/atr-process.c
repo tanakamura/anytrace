@@ -263,7 +263,8 @@ ATR_dump_process(FILE *fp,
         npr_rbtree_init(&visited);
 
         ATR_backtrace_init(&tr, proc);
-        while (1) {
+
+        for (int depth=0; ; depth++) {
             int insert = npr_rbtree_insert(&visited, tr.cfa_regs[X8664_CFA_REG_RSP], 1);
 
             if (insert == 0) {
@@ -273,8 +274,14 @@ ATR_dump_process(FILE *fp,
 
             r = ATR_backtrace_up(atr, &tr, proc);
             if (r != 0) {
+                ATR_perror(atr);
+
                 break;
             }
+
+            printf("#%d %p\n",
+                   depth,
+                   tr.cfa_regs[X8664_CFA_REG_RIP]);
         }
 
         npr_rbtree_fini(&visited);

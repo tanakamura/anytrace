@@ -26,6 +26,7 @@ enum ATR_error_code {
 
     ATR_DWARF_UNKNOWN_CFA_REG,
     ATR_DWARF_UNIMPLEMENTED_CFA_OP,
+    ATR_DWARF_INVALID_CFA,
 
     ATR_INVALID_ARGUMENT,
 };
@@ -75,7 +76,7 @@ struct ATR_Error {
 
         struct {
             unsigned int opc;
-        } dwarf_unimplemented_op;
+        } dwarf_unimplemented_op, dwarf_invalid_cfa;
     }u;
 };
 
@@ -89,6 +90,10 @@ void ATR_set_error_code(struct ATR *atr,
 void ATR_set_dwarf_unimplemented_cfa_op(struct ATR *atr,
                                         struct ATR_Error *e,
                                         unsigned int opc);
+
+void ATR_set_dwarf_invalid_cfa(struct ATR *atr,
+                               struct ATR_Error *e,
+                               unsigned int opc);
 
 void ATR_set_libc_path_error(struct ATR *atr,
                              struct ATR_Error *e,

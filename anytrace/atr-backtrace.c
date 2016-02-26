@@ -58,27 +58,21 @@ read_leb128(unsigned char *ptr,
             unsigned int *cur)
 {
     unsigned int shift = 0;
-
-    int32_t val = ptr[(*cur)++];
-
-    /* sign extend */
-    int32_t ret = ((val << 26)>>26);
-
-    shift = 6;
-
-    if (! (val & 0x80)) {
-        return ret;
-    }
+    uint32_t ret = 0;
+    unsigned int val = 0;
 
     while (1) {
-        signed int val = ptr[(*cur)++];
+        val = ptr[(*cur)++];
 
         ret |= (val & 0x7f) << shift;
-        if (val & 0x80) {
+        shift += 7;
+        if (! (val & 0x80)) {
             break;
         }
+    }
 
-        shift += 7;
+    if (val & 0x40) {
+        ret |= -(1<<shift);
     }
 
     return ret;
@@ -90,24 +84,16 @@ read_uleb128(unsigned char *ptr,
 {
     unsigned int shift = 0;
 
-    uint32_t val = ptr[(*cur)++];
-    uint32_t ret = val;
-
-    shift = 6;
-
-    if (! (val & 0x80)) {
-        return ret;
-    }
+    uint32_t ret = 0;
 
     while (1) {
         unsigned int val = ptr[(*cur)++];
 
         ret |= (val & 0x7f) << shift;
-        if (val & 0x80) {
+        shift += 7;
+        if (! (val & 0x80)) {
             break;
         }
-
-        shift += 7;
     }
 
     return ret;
@@ -115,10 +101,13 @@ read_uleb128(unsigned char *ptr,
 
 
 struct cfa_reg {
+    int defined;
     int cfa_offset;
 };
 
 struct cfa_exec_env {
+    struct cfa_exec_env *chain;
+
     struct cfa_reg *regs;
 
     int data_align;
@@ -153,6 +142,7 @@ reserve_column_width(struct cfa_exec_env *env,
 
         for (int ri=prev; ri<column+1; ri++) {
             env->regs[ri].cfa_offset = 0;
+            env->regs[ri].defined = 0;
         }
 
     }
@@ -160,17 +150,67 @@ reserve_column_width(struct cfa_exec_env *env,
 
 static void
 copy_cfa_env(struct cfa_exec_env *dst,
-             const struct cfa_exec_env *src)
+             struct cfa_exec_env *src)
 {
     reserve_column_width(dst, src->column_width);
 
     memcpy(dst->regs, src->regs,
            src->column_width * sizeof(struct cfa_reg));
 
+    dst->data_align = src->data_align;
+    dst->code_align = src->code_align;
     dst->cfa_offset = src->cfa_offset;
     dst->cfa_reg = src->cfa_reg;
     dst->return_address_column = src->return_address_column;
+}
 
+static struct cfa_exec_env *
+push_cfa_env(struct cfa_exec_env *env)
+{
+    struct cfa_exec_env *top = malloc(sizeof(struct cfa_exec_env));
+
+    top->regs = NULL;
+    top->column_width = 0;
+    copy_cfa_env(top, env);
+
+    top->chain = env;
+
+    return top;
+}
+
+static struct cfa_exec_env *
+pop_cfa_env(struct cfa_exec_env *env)
+{
+    struct cfa_exec_env *next = env->chain;
+
+    free(env->regs);
+    free(env);
+
+    return next;
+}
+
+static void
+free_cfa_env(struct cfa_exec_env *env)
+{
+    free(env->regs);
+    free(env);
+}
+
+static void
+cleanup_cfa_stack(struct cfa_exec_env *env,
+                  struct cfa_exec_env *last)
+{
+    if (env == last) {
+        return;
+    }
+
+    copy_cfa_env(last, env);
+
+    while (env != last) {
+        struct cfa_exec_env *n = env->chain;
+        free_cfa_env(env);
+        env = n;
+    }
 }
 
 
@@ -207,17 +247,26 @@ ATR_backtrace_fini(struct ATR_backtracer *tr)
 }
 
 
+static void
+set_cfa_offset(struct cfa_reg *reg, int offset)
+{
+    reg->defined = 1;
+    reg->cfa_offset = offset;
+}
 
 /* return 1 if finished */
 static int
 exec_cfa(struct ATR *atr,
-         struct cfa_exec_env *env,
+         struct cfa_exec_env *env_start,
          unsigned char *base,
          unsigned int *cur,
          unsigned int end,
          uintptr_t cfa_pc,
          uintptr_t real_pc)
 {
+    struct cfa_exec_env *env = env_start;
+    int ret = -1;
+
     while (*(cur) < end) {
         unsigned int opc = base[*cur];
 
@@ -230,9 +279,10 @@ exec_cfa(struct ATR *atr,
         case DW_CFA_advance_loc: {
             unsigned int advance_val = opc & 0x3f;
             cfa_pc += advance_val;
-            //printf("advance %d (pc=%x, %x)\n", advance_val, (int)cfa_pc, (int)real_pc);
+            //printf("advance %d %d (pc=%x, %x)\n", advance_val, env->code_align, (int)cfa_pc, (int)real_pc);
             if (cfa_pc >= real_pc) {
-                return 1;
+                ret = 0;
+                goto fini;
             }
         }
             break;
@@ -241,7 +291,7 @@ exec_cfa(struct ATR *atr,
             int reg = opc & 0x3f;
             int off = read_leb128(base, cur);
             reserve_column_width(env, reg);
-            env->regs[reg].cfa_offset = off * env->data_align;
+            set_cfa_offset(&env->regs[reg], off * env->data_align);
 
             //printf("reg=%x off=%x\n", reg, off);
         }
@@ -253,6 +303,17 @@ exec_cfa(struct ATR *atr,
 
         default:
             switch (opc) {
+            case DW_CFA_advance_loc1: {
+                unsigned char advance_val = base[(*cur)++];
+                cfa_pc += advance_val;
+                //printf("advance1 %d %d (pc=%x, %x)\n", advance_val, env->code_align, (int)cfa_pc, (int)real_pc);
+                if (cfa_pc >= real_pc) {
+                    ret = 0;
+                    goto fini;
+                }
+            }
+                break;
+
             case DW_CFA_def_cfa: {
                 signed int reg = read_leb128(base, cur);
                 signed int off = read_leb128(base, cur);
@@ -269,7 +330,8 @@ exec_cfa(struct ATR *atr,
                 break;
 
             case DW_CFA_def_cfa_offset:{          /* def cfa offset */
-                unsigned int off = read_leb128(base, cur);
+                unsigned int off = read_uleb128(base, cur);
+                //printf("def_cfa_offset %d\n", off);
                 env->cfa_offset = off;
             }
                 break;
@@ -289,17 +351,36 @@ exec_cfa(struct ATR *atr,
             }
                 break;
 
+            case DW_CFA_remember_state:
+                env = push_cfa_env(env);
+                break;
+
+            case DW_CFA_restore_state:
+                if (env == env_start) {
+                    ATR_set_dwarf_invalid_cfa(atr, &atr->last_error, opc);
+                    ret = -1;
+                    goto fini;
+                }
+
+                env = pop_cfa_env(env);
+                break;
+
+
             default:
                 ATR_set_dwarf_unimplemented_cfa_op(atr, &atr->last_error, opc);
                 printf("DW_?? (%x)\n", opc);
-                return -1;
+                ret = -1;
+                goto fini;
             }
             break;
         }
-
     }
 
-    return 0;
+    ret = 0;
+
+fini:
+    cleanup_cfa_stack(env, env_start);
+    return ret;
 }
 
 
@@ -316,8 +397,7 @@ ATR_backtrace_up(struct ATR *atr,
      */
     struct ATR_file fp;
 
-    struct cfa_exec_env cie_env;
-    struct cfa_exec_env fde_env;
+    struct cfa_exec_env exec_env, *fde_env = NULL;
     uintptr_t pc = tr->cfa_regs[X8664_CFA_REG_RIP];
     uintptr_t pc_offset = 0;
     struct ATR_map_info mapi;
@@ -326,7 +406,7 @@ ATR_backtrace_up(struct ATR *atr,
     if (r != 0) {
         return -1;
     }
-    printf("file=%s, pc = %llx\n", mapi.path->symstr, pc);
+    //printf("file=%s, pc = %llx\n", mapi.path->symstr, pc);
 
     r = ATR_file_open(&fp, atr, mapi.path);
     if (r != 0) {
@@ -335,11 +415,9 @@ ATR_backtrace_up(struct ATR *atr,
 
     pc_offset = mapi.offset;
 
-    cie_env.regs = NULL;
-    cie_env.column_width = 0;
-
-    fde_env.regs = NULL;
-    fde_env.column_width = 0;
+    exec_env.chain = NULL;
+    exec_env.regs = NULL;
+    exec_env.column_width = 0;
 
     if (fp.eh_frame.length == 0) {
         ATR_file_close(atr, &fp);
@@ -383,20 +461,20 @@ ATR_backtrace_up(struct ATR *atr,
                 }
             }
 
-            cie_env.code_align = read_leb128(base, &cie_cur); /* code alignment factor */
-            cie_env.data_align = read_leb128(base, &cie_cur); /* data lignment factor */
+            exec_env.code_align = read_leb128(base, &cie_cur); /* code alignment factor */
+            exec_env.data_align = read_leb128(base, &cie_cur); /* data lignment factor */
 
-            cie_env.return_address_column = read_leb128(base, &cie_cur); /* return address register */
+            exec_env.return_address_column = read_leb128(base, &cie_cur); /* return address register */
 
-            reserve_column_width(&cie_env, cie_env.return_address_column);
+            reserve_column_width(&exec_env, exec_env.return_address_column);
 
             if (have_aug) {
                 unsigned int length = read_leb128(base, &cie_cur);
                 cie_cur += length;
             }
 
-            printf("cie = %x, cur = %x, pc = %x\n", (int)cie_cur, (int)cur, (int)pc_offset);
-            r = exec_cfa(atr, &cie_env, base, &cie_cur, cur+length+4, 0, pc_offset);
+            //printf("cie = %x, cur = %x, pc = %x\n", (int)cie_cur, (int)cur, (int)pc_offset);
+            r = exec_cfa(atr, &exec_env, base, &cie_cur, cur+length+4, 0, pc_offset);
             if (r < 0) {
                 goto fini;
             }
@@ -415,16 +493,14 @@ ATR_backtrace_up(struct ATR *atr,
                     fde_cur += length;
                 }
 
-                copy_cfa_env(&fde_env, &cie_env);
-                printf("fde = %x, cur = %x, pc = %x\n", (int)fde_cur, (int)cur, (int)pc_offset);
+                fde_env = push_cfa_env(&exec_env);
+                //printf("fde = %x, cur = %x, pc = %x\n", (int)fde_cur, (int)cur, (int)pc_offset);
 
-                int r = exec_cfa(atr, &fde_env, base, &fde_cur, cur+length+4, begin, pc_offset);
+                int r = exec_cfa(atr, fde_env, base, &fde_cur, cur+length+4, begin, pc_offset);
                 if (r == -1) {
                     goto fini;
                 }
 
-                struct user_regs_struct regs;
-                r = ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs);
                 if (r == -1) {
                     ATR_set_libc_path_error(atr,
                                             &atr->last_error,
@@ -432,46 +508,43 @@ ATR_backtrace_up(struct ATR *atr,
                     goto fini;
                 }
 
-                uintptr_t cfa_val = 0;
-                switch(fde_env.cfa_reg) {
-                case 0: cfa_val = regs.rax; break;
-                case 1: cfa_val = regs.rdx; break;
-                case 2: cfa_val = regs.rcx; break;
-                case 3: cfa_val = regs.rbx; break;
-                case 4: cfa_val = regs.rsi; break;
-                case 5: cfa_val = regs.rdi; break;
-                case 6: cfa_val = regs.rbp; break;
-                case 7: cfa_val = regs.rsp; break;
+                //printf("offset = %d, %d, cfa_reg = %d\n",
+                //       (int)fde_env->cfa_offset,
+                //       (int)fde_env->regs[fde_env->return_address_column].cfa_offset,
+                //       (int)fde_env->cfa_reg);
 
-                default:
-                    ATR_set_dwarf_unknown_cfa_reg(atr,
-                                                  &atr->last_error,
-                                                  fde_env.cfa_reg,
-                                                  fp.path,
-                                                  pc);
-                    break;
+                uintptr_t cfa_val = tr->cfa_regs[fde_env->cfa_reg];
+                uintptr_t cfa_top = cfa_val + fde_env->cfa_offset;
+
+                int nc = exec_env.column_width;
+
+                for (int ci=0; ci<nc; ci++) {
+                    if (fde_env->regs[ci].defined) {
+                        uintptr_t value_pos = cfa_top + fde_env->regs[ci].cfa_offset;
+                        uintptr_t reg_value;
+                        errno = 0;
+                        reg_value = ptrace(PTRACE_PEEKDATA, proc->pid,
+                                           (void*)value_pos, 0);
+
+                        if (errno != 0) {
+                            //printf("ci = %d %llx %llx\n", ci, (long long)fde_env->regs[ci].cfa_offset, (long long)cfa_top);
+                            ATR_set_read_frame_failed(atr, &atr->last_error,
+                                                      value_pos, errno);
+                            goto fini;
+                        }
+
+                        if (ci < ATR_TRACER_NUM_REG) {
+                            tr->cfa_regs[ci] = reg_value;
+                        }
+                    }
                 }
 
-                uintptr_t cfa_top = cfa_val + fde_env.cfa_offset;
-                uintptr_t ret_addr_pos = cfa_top + fde_env.regs[fde_env.return_address_column].cfa_offset;
+                uintptr_t return_addr = tr->cfa_regs[fde_env->return_address_column];
 
-                uintptr_t return_addr;
-                errno = 0;
-                return_addr = ptrace(PTRACE_PEEKDATA, proc->pid,
-                                     (void*)ret_addr_pos, 0);
+                //printf("return_addr=%p, ret_addr_pos=%p\n",
+                //       (int*)return_addr, (int*)tr->cfa_regs[X8664_CFA_REG_RSP]);
 
-                if (errno != 0) {
-                    ATR_set_read_frame_failed(atr, &atr->last_error,
-                                              ret_addr_pos, errno);
-
-                    goto fini;
-                }
-
-                tr->cfa_regs[X8664_CFA_REG_RIP] = return_addr;
-                tr->cfa_regs[X8664_CFA_REG_RSP] = ret_addr_pos + 8;
-
-                printf("return_addr=%p, ret_addr_pos=%p\n",
-                       (int*)return_addr, (int*)ret_addr_pos);
+                tr->cfa_regs[X8664_CFA_REG_RSP] += 8;
 
                 ret = 0;
                 goto fini;
@@ -489,8 +562,14 @@ ATR_backtrace_up(struct ATR *atr,
 fini:
     ATR_file_close(atr, &fp);
 
-    free(fde_env.regs);
-    free(cie_env.regs);
+    if (fde_env) {
+
+
+        free_cfa_env(fde_env);
+        fde_env = NULL;
+    }
+
+    free(exec_env.regs);
 
     return ret;
 }
