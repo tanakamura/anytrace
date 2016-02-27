@@ -257,14 +257,19 @@ ATR_dump_process(FILE *fp,
                 file.eh_frame.start,
                 file.eh_frame.start + file.eh_frame.length);
 
+        ATR_file_close(atr, &file);
+
         struct ATR_backtracer tr;
+        r = ATR_backtrace_init(atr, &tr, proc);
+        if (r < 0) {
+            ATR_perror(atr);
+            return;
+        }
 
         struct npr_rbtree visited;
         npr_rbtree_init(&visited);
 
-        ATR_backtrace_init(&tr, proc);
-
-        for (int depth=0; ; depth++) {
+        for (int depth=0; tr.state==ATR_BACKTRACER_OK; depth++) {
             int insert = npr_rbtree_insert(&visited, tr.cfa_regs[X8664_CFA_REG_RSP], 1);
 
             if (insert == 0) {
@@ -274,20 +279,25 @@ ATR_dump_process(FILE *fp,
 
             r = ATR_backtrace_up(atr, &tr, proc);
             if (r != 0) {
-                ATR_perror(atr);
-
+                //ATR_perror(atr);
                 break;
             }
 
-            printf("#%d %p\n",
-                   depth,
-                   tr.cfa_regs[X8664_CFA_REG_RIP]);
+            if (tr.state == ATR_BACKTRACER_OK) {
+                printf("#%d %p (%s)\n",
+                       depth,
+                       (void*)tr.cfa_regs[X8664_CFA_REG_RIP],
+                       tr.current_module.path->symstr);
+            } else {
+                printf("#%d %p\n",
+                       depth,
+                       (void*)tr.cfa_regs[X8664_CFA_REG_RIP]);
+
+            }
         }
 
         npr_rbtree_fini(&visited);
 
-        ATR_backtrace_fini(&tr);
-
-        ATR_file_close(atr, &file);
+        ATR_backtrace_fini(atr, &tr);
     }
 }

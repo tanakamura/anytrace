@@ -214,12 +214,18 @@ cleanup_cfa_stack(struct cfa_exec_env *env,
 }
 
 
-void
-ATR_backtrace_init(struct ATR_backtracer *tr,
+int
+ATR_backtrace_init(struct ATR *atr,
+                   struct ATR_backtracer *tr,
                    struct ATR_process *proc)
 {
     struct user_regs_struct regs;
+    errno = 0;
     ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs);
+    if (errno != 0) {
+        ATR_set_libc_path_error(atr, &atr->last_error, errno, "ptrace");
+        return -1;
+    }
 
     tr->cfa_regs[0] = regs.rax;
     tr->cfa_regs[1] = regs.rdx;
@@ -238,12 +244,33 @@ ATR_backtrace_init(struct ATR_backtracer *tr,
     tr->cfa_regs[14] = regs.r14;
     tr->cfa_regs[15] = regs.r15;
     tr->cfa_regs[16] = regs.rip;
+
+
+    struct ATR_map_info mapi;
+
+    int r = ATR_lookup_map_info(&mapi, atr, proc, regs.rip);
+    if (r != 0) {
+        return -1;
+    }
+    //printf("file=%s, pc = %llx\n", mapi.path->symstr, pc);
+
+    r = ATR_file_open(&tr->current_module, atr, mapi.path);
+    if (r != 0) {
+        return -1;
+    }
+
+    tr->pc_offset_in_module = mapi.offset;
+    tr->state = ATR_BACKTRACER_OK;
+
+    return 0;
 }
 
 void
-ATR_backtrace_fini(struct ATR_backtracer *tr)
+ATR_backtrace_fini(struct ATR *atr, struct ATR_backtracer *tr)
 {
-
+    if (tr->state == ATR_BACKTRACER_OK) {
+        ATR_file_close(atr, &tr->current_module);
+    }
 }
 
 
@@ -389,47 +416,38 @@ ATR_backtrace_up(struct ATR *atr,
                  struct ATR_backtracer *tr,
                  struct ATR_process *proc)
 {
+    if (tr->state != ATR_BACKTRACER_OK) {
+        return 0;
+    }
+
     /* frame info */
 
     /* 1. extract from .eh_frame
      * 2. extract from debug?
      * 3. extract from 16(%rbp)?
      */
-    struct ATR_file fp;
 
     struct cfa_exec_env exec_env, *fde_env = NULL;
     uintptr_t pc = tr->cfa_regs[X8664_CFA_REG_RIP];
-    uintptr_t pc_offset = 0;
-    struct ATR_map_info mapi;
-
-    int r = ATR_lookup_map_info(&mapi, atr, proc, pc);
-    if (r != 0) {
-        return -1;
-    }
-    //printf("file=%s, pc = %llx\n", mapi.path->symstr, pc);
-
-    r = ATR_file_open(&fp, atr, mapi.path);
-    if (r != 0) {
-        return -1;
-    }
-
-    pc_offset = mapi.offset;
+    uintptr_t pc_offset = pc_offset = tr->pc_offset_in_module;
 
     exec_env.chain = NULL;
     exec_env.regs = NULL;
     exec_env.column_width = 0;
 
-    if (fp.eh_frame.length == 0) {
-        ATR_file_close(atr, &fp);
-        ATR_set_frame_info_not_found(atr, &atr->last_error, fp.path, pc);
+    struct ATR_file *fp = &tr->current_module;
+
+    if (fp->eh_frame.length == 0) {
+        ATR_file_close(atr, &tr->current_module);
+        ATR_set_frame_info_not_found(atr, &atr->last_error, fp->path, pc);
         return -1;
     }
 
     int ret = -1;
 
     uintptr_t cur = 0;
-    size_t length = fp.eh_frame.length;
-    unsigned char *base = fp.mapped_addr + fp.eh_frame.start;
+    size_t length = fp->eh_frame.length;
+    unsigned char *base = fp->mapped_addr + fp->eh_frame.start;
 
     unsigned int have_aug = 0;
 
@@ -474,16 +492,15 @@ ATR_backtrace_up(struct ATR *atr,
             }
 
             //printf("cie = %x, cur = %x, pc = %x\n", (int)cie_cur, (int)cur, (int)pc_offset);
-            r = exec_cfa(atr, &exec_env, base, &cie_cur, cur+length+4, 0, pc_offset);
+            int r = exec_cfa(atr, &exec_env, base, &cie_cur, cur+length+4, 0, pc_offset);
             if (r < 0) {
                 goto fini;
             }
-
         } else {
             uint32_t begin0 = read4(base + cur + 8);
             uint32_t range = read4(base + cur + 12);
 
-            uint32_t begin = (uint32_t)(fp.eh_frame.start + cur + 8 + begin0);
+            uint32_t begin = (uint32_t)(fp->eh_frame.start + cur + 8 + begin0);
             uint32_t end = begin + range;
             unsigned int fde_cur = cur + 16;
 
@@ -546,6 +563,20 @@ ATR_backtrace_up(struct ATR *atr,
 
                 tr->cfa_regs[X8664_CFA_REG_RSP] += 8;
 
+                ATR_file_close(atr, &tr->current_module);
+                struct ATR_map_info mapi;
+                r = ATR_lookup_map_info(&mapi, atr, proc, return_addr);
+                if (r == 0) {
+                    r = ATR_file_open(&tr->current_module, atr, mapi.path);
+                    tr->pc_offset_in_module = mapi.offset;
+                }
+
+                if (r != 0) {
+                    ATR_error_clear(atr, &atr->last_error);
+                    tr->state = ATR_BACKTRACER_FRAME_BOTTOM;
+                }
+                //printf("file=%s, pc = %llx\n", mapi.path->symstr, pc);
+
                 ret = 0;
                 goto fini;
             } else {
@@ -557,19 +588,21 @@ ATR_backtrace_up(struct ATR *atr,
         cur += length + 4;
     }
 
-    ATR_set_frame_info_not_found(atr, &atr->last_error, fp.path, pc);
+    ATR_set_frame_info_not_found(atr, &atr->last_error, fp->path, pc);
 
 fini:
-    ATR_file_close(atr, &fp);
 
     if (fde_env) {
-
-
         free_cfa_env(fde_env);
         fde_env = NULL;
     }
 
     free(exec_env.regs);
+
+    if (ret == -1) {
+        ATR_file_close(atr, &tr->current_module);
+        tr->state = ATR_BACKTRACER_HAVE_ERROR;
+    }
 
     return ret;
 }

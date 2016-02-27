@@ -140,11 +140,10 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
     info->sym_lookup_error.code = ATR_NO_ERROR;
     info->location_lookup_error.code = ATR_NO_ERROR;
 
-    /* 1. symtab
-     * 2. dynsym
+    /* 1. .debug_info (not yet)
+     * 2. .symtab
+     * 3. .dynsym
      */
-
-    
 
     return;
 }
