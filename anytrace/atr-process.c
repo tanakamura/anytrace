@@ -90,11 +90,9 @@ ATR_open_process(struct ATR_process *dst,
                                     "ptrace");
             return -1;
         }
+        int wait_st;
+        waitpid(tid, &wait_st, 0);
     }
-
-    int wait_st;
-    waitpid(pid, &wait_st, 0);
-
 
     sprintf(buf, "/proc/%d/maps", pid);
     FILE *fp = fopen(buf, "rb");
@@ -205,7 +203,6 @@ ATR_close_process(struct ATR *atr,
         int tid = proc->tasks[ti];
         ptrace(PTRACE_DETACH, tid, NULL, NULL);
     }
-
 
     npr_mempool_fini(proc->allocator);
     free(proc->allocator);
