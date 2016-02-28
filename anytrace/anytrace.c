@@ -43,7 +43,7 @@ main(int argc, char **argv)
     struct ATR_process proc;
 
     ATR_init(&atr);
-    
+
     int r = ATR_open_process(&proc, &atr, pid);
     if (r < 0) {
         ATR_perror(&atr);

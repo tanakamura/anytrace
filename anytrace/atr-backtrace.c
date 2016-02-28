@@ -156,7 +156,6 @@ reserve_column_width(struct cfa_exec_env *env,
             env->regs[ri].cfa_offset = 0;
             env->regs[ri].defined = 0;
         }
-
     }
 }
 
