@@ -3,6 +3,7 @@
 static void
 eval_hook(struct ATR *atr,
           struct ATR_backtracer *tr,
+          struct ATR_frame_builder *fb,
           void *hook_arg)
 {
     puts("python");

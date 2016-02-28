@@ -34,34 +34,11 @@ ATR_open_process(struct ATR_process *dst,
         return -1;
     }
 
-    long pt_result = ptrace(PTRACE_ATTACH, pid, NULL, NULL);
-    if (pt_result != 0) {
-        if (errno == EPERM) {
-            FILE *yama = fopen("/proc/sys/kernel/yama/ptrace_scope", "rb");
-            int c = fgetc(yama);
-            fclose(yama);
-
-            if (c != '0') {
-                ATR_set_error_code(atr, &atr->last_error, ATR_YAMA_ENABLED);
-                return -1;
-            }
-        }
-
-        ATR_set_libc_path_error(atr,
-                                &atr->last_error,
-                                errno,
-                                "ptrace");
-        return -1;
-    }
-
-    int wait_st;
-    waitpid(pid, &wait_st, 0);
 
     char buf[1024];
     sprintf(buf, "/proc/%d/task", pid);
     DIR *tasks = opendir(buf);
     if (tasks == NULL) {
-        ptrace(PTRACE_DETACH, pid, NULL, NULL);
         ATR_set_libc_path_error(atr, &atr->last_error, errno, buf);
         return -1;
     }
@@ -88,17 +65,50 @@ ATR_open_process(struct ATR_process *dst,
         VA_PUSH(int, &tid_list, tid);
     }
 
+
     dst->num_task = tid_list.nelem;
     dst->tasks = (int*)npr_varray_close(&tid_list, dst->allocator);
+
+    for (int ti=0; ti<dst->num_task; ti++) {
+        int tid = dst->tasks[ti];
+        long pt_result = ptrace(PTRACE_ATTACH, tid, NULL, NULL);
+        if (pt_result != 0) {
+            if (errno == EPERM) {
+                FILE *yama = fopen("/proc/sys/kernel/yama/ptrace_scope", "rb");
+                int c = fgetc(yama);
+                fclose(yama);
+
+                if (c != '0') {
+                    ATR_set_error_code(atr, &atr->last_error, ATR_YAMA_ENABLED);
+                    return -1;
+                }
+            }
+
+            ATR_set_libc_path_error(atr,
+                                    &atr->last_error,
+                                    errno,
+                                    "ptrace");
+            return -1;
+        }
+    }
+
+    int wait_st;
+    waitpid(pid, &wait_st, 0);
+
 
     sprintf(buf, "/proc/%d/maps", pid);
     FILE *fp = fopen(buf, "rb");
 
     if (fp == NULL) {
-        ptrace(PTRACE_DETACH, pid, NULL, NULL);
         ATR_set_libc_path_error(atr, &atr->last_error, errno, buf);
         npr_mempool_fini(dst->allocator);
         free(dst->allocator);
+
+        for (int ti=0; ti<dst->num_task; ti++) {
+            int tid = dst->tasks[ti];
+            ptrace(PTRACE_DETACH, tid, NULL, NULL);
+        }
+
         return -1;
     }
 
@@ -191,7 +201,11 @@ void
 ATR_close_process(struct ATR *atr,
                   struct ATR_process *proc)
 {
-    ptrace(PTRACE_DETACH, proc->pid, NULL, NULL);
+    for (int ti=0; ti<proc->num_task; ti++) {
+        int tid = proc->tasks[ti];
+        ptrace(PTRACE_DETACH, tid, NULL, NULL);
+    }
+
 
     npr_mempool_fini(proc->allocator);
     free(proc->allocator);
@@ -299,7 +313,7 @@ ATR_dump_process(FILE *fp,
             ATR_file_close(atr, &file);
 
             struct ATR_backtracer tr;
-            r = ATR_backtrace_init(atr, &tr, proc);
+            r = ATR_backtrace_init(atr, &tr, proc, tid);
             if (r < 0) {
                 ATR_perror(atr);
                 return;

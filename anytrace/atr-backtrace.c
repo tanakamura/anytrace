@@ -228,11 +228,12 @@ cleanup_cfa_stack(struct cfa_exec_env *env,
 int
 ATR_backtrace_init(struct ATR *atr,
                    struct ATR_backtracer *tr,
-                   struct ATR_process *proc)
+                   struct ATR_process *proc,
+                   int tid)
 {
     struct user_regs_struct regs;
     errno = 0;
-    ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs);
+    ptrace(PTRACE_GETREGS, tid, NULL, &regs);
     if (errno != 0) {
         ATR_set_libc_path_error(atr, &atr->last_error, errno, "ptrace");
         return -1;
@@ -255,7 +256,7 @@ ATR_backtrace_init(struct ATR *atr,
     tr->cfa_regs[14] = regs.r14;
     tr->cfa_regs[15] = regs.r15;
     tr->cfa_regs[16] = regs.rip;
-
+    tr->tid = tid;
 
     struct ATR_map_info mapi;
 
@@ -554,7 +555,7 @@ ATR_backtrace_up(struct ATR *atr,
                         uintptr_t value_pos = cfa_top + fde_env->regs[ci].cfa_offset;
                         uintptr_t reg_value;
                         errno = 0;
-                        reg_value = ptrace(PTRACE_PEEKDATA, proc->pid,
+                        reg_value = ptrace(PTRACE_PEEKDATA, tr->tid,
                                            (void*)value_pos, 0);
 
                         if (errno != 0) {

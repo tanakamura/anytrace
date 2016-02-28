@@ -22,6 +22,7 @@ enum ATR_backtracer_state {
 
 struct ATR_backtracer {
     enum ATR_backtracer_state state;
+    int tid;
 
     struct ATR_file current_module;
     uintptr_t pc_offset_in_module;
@@ -34,7 +35,8 @@ struct ATR;
 
 int ATR_backtrace_init(struct ATR *atr,
                        struct ATR_backtracer *tr,
-                       struct ATR_process *proc);
+                       struct ATR_process *proc,
+                       int tid);
 
 /* return -1 if failed */
 int ATR_backtrace_up(struct ATR *atr,

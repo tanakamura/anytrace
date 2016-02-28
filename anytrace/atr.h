@@ -21,6 +21,7 @@ extern "C" {
 #endif
 
 struct ATR_impl;
+struct ATR_process;
 
 struct ATR {
     struct ATR_Error last_error;
@@ -56,7 +57,7 @@ enum ATR_frame_lang_code {
     ATR_FRAME_LANG_EXT
 };
 
-struct ATR_stack_frame {
+struct ATR_stack_frame_entry {
     enum ATR_frame_lang_code lang;
     int ext_lang_id;            // index of ATR::languages, valid if lang == ATR_FRAME_LANG_EXT
 
@@ -74,8 +75,22 @@ struct ATR_stack_frame {
     struct ATR_stack_frame *child_frame;
 };
 
+struct ATR_stack_frame {
+    int num_entry;
+    struct ATR_stack_frame_entry *entries;
+};
+
+ATR_EXPORT int ATR_get_frame(struct ATR_stack_frame *frame,
+                             struct ATR *atr,
+                             struct ATR_process *proc,
+                             int tid);
+
+ATR_EXPORT void ATR_frame_fini(struct ATR *atr,
+                               struct ATR_stack_frame *frame);
 
 ATR_EXPORT void ATR_perror(struct ATR *atr);
+
+
 
 #ifdef __cplusplus
 }
