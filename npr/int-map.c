@@ -3,7 +3,6 @@
 #include <stdlib.h>
 
 #define MINSIZE 8
-static struct npr_chunk_allocator npr_symtab_elem_allocator;
 
 /* from st.c */
 static const long primes[] = {
@@ -60,7 +59,7 @@ new_size(int size)
 static struct npr_symtab_entry *
 alloc_entry(struct npr_symtab *tab, int *do_rehash)
 {
-    struct npr_symtab_entry *e = npr_chunk_allocator_alloc(&npr_symtab_elem_allocator);
+    struct npr_symtab_entry *e = npr_chunk_allocator_alloc(&tab->elem_allocator);
     int ratio;
     tab->num_entry++;
 
@@ -147,6 +146,10 @@ npr_symtab_init(struct npr_symtab *m,
     int size = new_size(size_hint);
     int i;
 
+    npr_chunk_allocator_init(&m->elem_allocator,
+                             sizeof(struct npr_symtab_entry),
+                             16);
+
     m->entries = malloc(sizeof(struct npr_symtab_entry*) * size);
 
     m->num_bin = size;
@@ -159,31 +162,18 @@ npr_symtab_init(struct npr_symtab *m,
 void
 npr_symtab_fini(struct npr_symtab *m)
 {
-    int i, n = m->num_bin;
-    for (i=0; i<n; i++) {
-        struct npr_symtab_entry *e = m->entries[i], *n;
-        while (e) {
-            n = e->chain;
-            npr_chunk_allocator_free(&npr_symtab_elem_allocator, e);
-            e = n;
-        }
-    }
-
+    npr_chunk_allocator_fini(&m->elem_allocator);
     free(m->entries);
 }
 
 void
 npr_symtab_global_init()
 {
-    npr_chunk_allocator_init(&npr_symtab_elem_allocator,
-                             sizeof(struct npr_symtab_entry),
-                             512);
 }
 
 void
 npr_symtab_global_fini()
 {
-    npr_chunk_allocator_fini(&npr_symtab_elem_allocator);
 }
 
 void

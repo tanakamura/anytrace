@@ -2,6 +2,7 @@
 #define NPR_INT_MAP_H
 
 #include <stdio.h>
+#include "npr/chunk-alloc.h"
 #include "npr/symbol.h"
 
 #ifdef __cplusplus
@@ -18,6 +19,7 @@ struct npr_symtab {
     int num_bin;
     int num_entry;
     struct npr_symtab_entry **entries;
+    struct npr_chunk_allocator elem_allocator;
 };
 
 void npr_symtab_init(struct npr_symtab *m,

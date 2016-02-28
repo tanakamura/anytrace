@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include "npr/symbol.h"
 
 struct npr_symbol *npr_plus_symbol, *npr_minus_symbol;
@@ -31,9 +32,13 @@ hash(const char *string, int len)
     return hval;
 }
 
+static pthread_mutex_t sym_lock = PTHREAD_MUTEX_INITIALIZER;
+
 struct npr_symbol *
 npr_intern_with_hash( const char * symstr, size_t str_len, unsigned int hval )
 {
+    pthread_mutex_lock(&sym_lock);
+
     unsigned int h = hval % table.num_backets;
     struct backet *chain, **begin = &(table.backets[h]);
     struct backet *b;
@@ -64,6 +69,8 @@ npr_intern_with_hash( const char * symstr, size_t str_len, unsigned int hval )
     b->value = sym;
     b->chain = table.backets[h];
     table.backets[h] = b;
+
+    pthread_mutex_unlock(&sym_lock);
 
     return sym;
 }
