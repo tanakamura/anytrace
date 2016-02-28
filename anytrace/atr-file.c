@@ -15,6 +15,9 @@
 #include "anytrace/atr-backtrace.h"
 #include "config.h"
 
+#include "npr/mempool.h"
+#include "npr/symbol.h"
+
 #if ANYTRACE_POINTER_SIZE == 8
 typedef Elf64_Ehdr Elf_Ehdr;
 typedef Elf64_Shdr Elf_Shdr;

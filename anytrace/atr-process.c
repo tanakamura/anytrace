@@ -12,6 +12,7 @@
 
 #include "npr/strbuf.h"
 #include "npr/varray.h"
+#include "npr/symbol.h"
 #include "npr/red-black-tree.h"
 
 #include "anytrace/atr.h"
@@ -65,7 +66,8 @@ ATR_open_process(struct ATR_process *dst,
         return -1;
     }
 
-    npr_mempool_init(&dst->allocator, 128);
+    dst->allocator = (struct npr_mempool*)malloc(sizeof(struct npr_mempool));
+    npr_mempool_init(dst->allocator, 128);
 
     struct npr_varray tid_list;
     npr_varray_init(&tid_list, 4, sizeof(int));
@@ -87,7 +89,7 @@ ATR_open_process(struct ATR_process *dst,
     }
 
     dst->num_task = tid_list.nelem;
-    dst->tasks = (int*)npr_varray_close(&tid_list, &dst->allocator);
+    dst->tasks = (int*)npr_varray_close(&tid_list, dst->allocator);
 
     sprintf(buf, "/proc/%d/maps", pid);
     FILE *fp = fopen(buf, "rb");
@@ -95,7 +97,8 @@ ATR_open_process(struct ATR_process *dst,
     if (fp == NULL) {
         ptrace(PTRACE_DETACH, pid, NULL, NULL);
         ATR_set_libc_path_error(atr, &atr->last_error, errno, buf);
-        npr_mempool_fini(&dst->allocator);
+        npr_mempool_fini(dst->allocator);
+        free(dst->allocator);
         return -1;
     }
 
@@ -176,10 +179,10 @@ ATR_open_process(struct ATR_process *dst,
     dst->pid = pid;
 
     dst->num_mapping = mappings.nelem;
-    dst->mappings = npr_varray_close(&mappings, &dst->allocator);
+    dst->mappings = npr_varray_close(&mappings, dst->allocator);
 
     dst->num_module = modules.nelem;
-    dst->modules = npr_varray_close(&modules, &dst->allocator);
+    dst->modules = npr_varray_close(&modules, dst->allocator);
 
     return 0;
 }
@@ -190,7 +193,8 @@ ATR_close_process(struct ATR *atr,
 {
     ptrace(PTRACE_DETACH, proc->pid, NULL, NULL);
 
-    npr_mempool_fini(&proc->allocator);
+    npr_mempool_fini(proc->allocator);
+    free(proc->allocator);
 }
 
 

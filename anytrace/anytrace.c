@@ -22,7 +22,7 @@ main(int argc, char **argv)
         if (c == -1) {
             break;
         }
-            
+
         switch (c) {
         case 'p':
             pid = atoi(optarg);
