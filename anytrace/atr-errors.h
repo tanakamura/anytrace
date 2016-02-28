@@ -3,9 +3,6 @@
 
 #include <stdint.h>
 
-#include "npr/int-map.h"
-#include "npr/mempool.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif

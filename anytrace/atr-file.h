@@ -1,13 +1,14 @@
 #ifndef ATR_FILE_H
 #define ATR_FILE_H
 
-#include "npr/symbol.h"
+#include <stddef.h>
 #include "anytrace/atr-errors.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+struct npr_symbol;
 struct ATR_process;
 struct ATR_backtracer;
 

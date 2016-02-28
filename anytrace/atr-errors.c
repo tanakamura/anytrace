@@ -4,6 +4,7 @@
 
 #include "atr-errors.h"
 #include "npr/strbuf.h"
+#include "npr/symbol.h"
 
 void
 ATR_error_clear(struct ATR *atr, struct ATR_Error *e)

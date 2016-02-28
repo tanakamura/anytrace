@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include "anytrace/atr.h"
+#include "anytrace/atr-impl.h"
 #include "anytrace/atr-language-module.h"
 
 void
@@ -7,10 +8,12 @@ ATR_init(struct ATR *atr)
 {
     npr_symbol_init();
     atr->last_error.code = ATR_NO_ERROR;
+    atr->impl = malloc(sizeof(struct ATR_impl));
 
-    atr->cap_language = 1;
+    atr->impl->cap_language = 1;
     atr->num_language = 0;
     atr->languages = malloc(sizeof(struct ATR_language_module) * 1);
+    npr_symtab_init(&atr->impl->lang_module_hook_table, 16);
 
     ATR_load_language_module(atr);
 }

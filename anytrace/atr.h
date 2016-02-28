@@ -20,12 +20,15 @@ extern "C" {
 
 #endif
 
-struct ATR {
-    struct ATR_Error last_error; // public
+struct ATR_impl;
 
-    int cap_language;           // internal
-    int num_language;           // public
-    struct ATR_language_module *languages; // public
+struct ATR {
+    struct ATR_Error last_error;
+
+    int num_language;
+    struct ATR_language_module *languages;
+
+    struct ATR_impl *impl;
 };
 
 ATR_EXPORT void ATR_init(struct ATR *atr);

@@ -63,3 +63,9 @@ install(TARGETS atr anytrace
   RUNTIME DESTINATION bin
   LIBRARY DESTINATION lib)
 
+install(FILES
+  anytrace/atr.h
+  anytrace/atr-file.h
+  anytrace/atr-errors.h
+  anytrace/atr-language-module.h
+  DESTINATION include/anytrace)
