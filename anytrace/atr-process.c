@@ -57,15 +57,47 @@ ATR_open_process(struct ATR_process *dst,
     waitpid(pid, &wait_st, 0);
 
     char buf[1024];
-    sprintf(buf, "/proc/%d/maps", pid);
-    FILE *fp = fopen(buf, "rb");
-
-    if (fp == NULL) {
+    sprintf(buf, "/proc/%d/task", pid);
+    DIR *tasks = opendir(buf);
+    if (tasks == NULL) {
+        ptrace(PTRACE_DETACH, pid, NULL, NULL);
         ATR_set_libc_path_error(atr, &atr->last_error, errno, buf);
         return -1;
     }
 
     npr_mempool_init(&dst->allocator, 128);
+
+    struct npr_varray tid_list;
+    npr_varray_init(&tid_list, 4, sizeof(int));
+
+    while (1) {
+        struct dirent entry, *result;
+        int r = readdir_r(tasks, &entry, &result);
+        if (r != 0 || result == NULL) {
+            closedir(tasks);
+            break;
+        }
+
+        if (result->d_name[0] == '.') {
+            continue;
+        }
+
+        int tid = atoi(result->d_name);
+        VA_PUSH(int, &tid_list, tid);
+    }
+
+    dst->num_task = tid_list.nelem;
+    dst->tasks = (int*)npr_varray_close(&tid_list, &dst->allocator);
+
+    sprintf(buf, "/proc/%d/maps", pid);
+    FILE *fp = fopen(buf, "rb");
+
+    if (fp == NULL) {
+        ptrace(PTRACE_DETACH, pid, NULL, NULL);
+        ATR_set_libc_path_error(atr, &atr->last_error, errno, buf);
+        npr_mempool_fini(&dst->allocator);
+        return -1;
+    }
 
     struct npr_strbuf path_buf;
     npr_strbuf_init(&path_buf);
@@ -211,93 +243,98 @@ ATR_dump_process(FILE *fp,
                 proc->mappings[i].end);
     }
 
-    struct user_regs_struct regs;
-    ptrace(PTRACE_GETREGS, proc->pid,
-           NULL, &regs);
+    for (int ti=0; ti<proc->num_task; ti++) {
+        int tid = proc->tasks[ti];
+        struct user_regs_struct regs;
+        ptrace(PTRACE_GETREGS, tid, NULL, &regs);
 
-    fprintf(fp, "==regs==\n");
-    fprintf(fp, "bp=%16llx\n", regs.rbp);
-    fprintf(fp, "sp=%16llx\n", regs.rsp);
+        fprintf(fp, "<task tid=%d>\n", tid);
 
-    struct ATR_map_info map;
+        fprintf(fp, "==regs==\n");
+        fprintf(fp, "bp=%16llx\n", regs.rbp);
+        fprintf(fp, "sp=%16llx\n", regs.rsp);
 
-    int r = ATR_lookup_map_info(&map, atr, 
-                                proc, regs.rip);
+        struct ATR_map_info map;
 
-    if (r < 0) {
-        char *str = ATR_strerror(atr, &atr->last_error);
-        fprintf(fp, "pc=%16llx unmapped? (%s)\n", regs.rip, str);
-        ATR_free(atr, str);
-        ATR_error_clear(atr, &atr->last_error);
-    } else {
-        fprintf(fp, "pc=%16llx (path=%s, file_offset=%"PRIxPTR")\n",
-                regs.rip,
-                map.path->symstr,
-                map.offset);
-
-        struct ATR_file file;
-        int r = ATR_file_open(&file, atr, map.path);
+        int r = ATR_lookup_map_info(&map, atr, 
+                                    proc, regs.rip);
 
         if (r < 0) {
-            ATR_perror(atr);
-            return;
-        }
+            char *str = ATR_strerror(atr, &atr->last_error);
+            fprintf(fp, "pc=%16llx unmapped? (%s)\n", regs.rip, str);
+            ATR_free(atr, str);
+            ATR_error_clear(atr, &atr->last_error);
+        } else {
+            fprintf(fp, "pc=%16llx (path=%s, file_offset=%"PRIxPTR")\n",
+                    regs.rip,
+                    map.path->symstr,
+                    map.offset);
 
-        fprintf(fp,
-                "  text        =%16"PRIxPTR"-%16"PRIxPTR"\n"
-                "  debug_abbrev=%16"PRIxPTR"-%16"PRIxPTR"\n"
-                "  debug_info  =%16"PRIxPTR"-%16"PRIxPTR"\n"
-                "  eh_frame    =%16"PRIxPTR"-%16"PRIxPTR"\n",
-                file.text.start,
-                file.text.start + file.text.length,
-                file.debug_abbrev.start,
-                file.debug_abbrev.start + file.debug_abbrev.length,
-                file.debug_info.start,
-                file.debug_info.start + file.debug_info.length,
-                file.eh_frame.start,
-                file.eh_frame.start + file.eh_frame.length);
+            struct ATR_file file;
+            int r = ATR_file_open(&file, atr, map.path);
 
-        ATR_file_close(atr, &file);
-
-        struct ATR_backtracer tr;
-        r = ATR_backtrace_init(atr, &tr, proc);
-        if (r < 0) {
-            ATR_perror(atr);
-            return;
-        }
-
-        struct npr_rbtree visited;
-        npr_rbtree_init(&visited);
-
-        for (int depth=0; tr.state==ATR_BACKTRACER_OK; depth++) {
-            int insert = npr_rbtree_insert(&visited, tr.cfa_regs[X8664_CFA_REG_RSP], 1);
-
-            if (insert == 0) {
-                /* detect loop */
-                break;
+            if (r < 0) {
+                ATR_perror(atr);
+                return;
             }
 
-            r = ATR_backtrace_up(atr, &tr, proc);
-            if (r != 0) {
-                //ATR_perror(atr);
-                break;
+            fprintf(fp,
+                    "  text        =%16"PRIxPTR"-%16"PRIxPTR"\n"
+                    "  debug_abbrev=%16"PRIxPTR"-%16"PRIxPTR"\n"
+                    "  debug_info  =%16"PRIxPTR"-%16"PRIxPTR"\n"
+                    "  eh_frame    =%16"PRIxPTR"-%16"PRIxPTR"\n",
+                    file.text.start,
+                    file.text.start + file.text.length,
+                    file.debug_abbrev.start,
+                    file.debug_abbrev.start + file.debug_abbrev.length,
+                    file.debug_info.start,
+                    file.debug_info.start + file.debug_info.length,
+                    file.eh_frame.start,
+                    file.eh_frame.start + file.eh_frame.length);
+
+            ATR_file_close(atr, &file);
+
+            struct ATR_backtracer tr;
+            r = ATR_backtrace_init(atr, &tr, proc);
+            if (r < 0) {
+                ATR_perror(atr);
+                return;
             }
 
-            if (tr.state == ATR_BACKTRACER_OK) {
-                printf("#%d %p (%s)\n",
-                       depth,
-                       (void*)tr.cfa_regs[X8664_CFA_REG_RIP],
-                       tr.current_module.path->symstr);
-            } else {
-                printf("#%d %p\n",
-                       depth,
-                       (void*)tr.cfa_regs[X8664_CFA_REG_RIP]);
+            struct npr_rbtree visited;
+            npr_rbtree_init(&visited);
+
+            for (int depth=0; ; depth++) {
+                if (tr.state == ATR_BACKTRACER_OK) {
+                    printf("#%d %p (%s)\n",
+                           depth,
+                           (void*)tr.cfa_regs[X8664_CFA_REG_RIP],
+                           tr.current_module.path->symstr);
+                } else {
+                    printf("#%d %p\n",
+                           depth,
+                           (void*)tr.cfa_regs[X8664_CFA_REG_RIP]);
+                    break;
+                }
+
+                int insert = npr_rbtree_insert(&visited, tr.cfa_regs[X8664_CFA_REG_RSP], 1);
+
+                if (insert == 0) {
+                    /* detect loop */
+                    break;
+                }
+
+                r = ATR_backtrace_up(atr, &tr, proc);
+                if (r != 0) {
+                    ATR_perror(atr);
+                    break;
+                }
 
             }
+
+            npr_rbtree_fini(&visited);
+
+            ATR_backtrace_fini(atr, &tr);
         }
-
-        npr_rbtree_fini(&visited);
-
-        ATR_backtrace_fini(atr, &tr);
     }
 }

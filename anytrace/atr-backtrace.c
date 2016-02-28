@@ -24,6 +24,18 @@ read4(unsigned char *p)
 
 }
 
+static uint32_t
+read2(unsigned char *p)
+{
+#ifdef __x86_64__
+    return *(uint16_t*)p;
+#elif ANYTRACE_BIG_ENDIAN == 1
+    return (p[0]<<8) | (p[1]<<0);
+#else
+    return (p[0]<<0) | (p[1]<<8);
+#endif
+}
+
 static uint64_t
 read8(unsigned char *p)
 {
@@ -302,15 +314,17 @@ exec_cfa(struct ATR *atr,
 
         (*cur)++;
 
+#define ADVANCE_PC(A)                                                   \
+        cfa_pc += A;                                                    \
+        if (cfa_pc >= real_pc) {                                        \
+            ret = 0;                                                    \
+            goto fini;                                                  \
+        }
+
         switch (opc & 0xc0) {
         case DW_CFA_advance_loc: {
             unsigned int advance_val = opc & 0x3f;
-            cfa_pc += advance_val;
-            //printf("advance %d %d (pc=%x, %x)\n", advance_val, env->code_align, (int)cfa_pc, (int)real_pc);
-            if (cfa_pc >= real_pc) {
-                ret = 0;
-                goto fini;
-            }
+            ADVANCE_PC(advance_val);
         }
             break;
 
@@ -331,13 +345,15 @@ exec_cfa(struct ATR *atr,
         default:
             switch (opc) {
             case DW_CFA_advance_loc1: {
-                unsigned char advance_val = base[(*cur)++];
-                cfa_pc += advance_val;
-                //printf("advance1 %d %d (pc=%x, %x)\n", advance_val, env->code_align, (int)cfa_pc, (int)real_pc);
-                if (cfa_pc >= real_pc) {
-                    ret = 0;
-                    goto fini;
-                }
+                unsigned int advance_val = base[(*cur)++];
+                ADVANCE_PC(advance_val);
+            }
+                break;
+
+            case DW_CFA_advance_loc2: {
+                unsigned int advance_val = read2(base + *cur);
+                (*cur) += 2;
+                ADVANCE_PC(advance_val);
             }
                 break;
 
@@ -409,7 +425,6 @@ fini:
     cleanup_cfa_stack(env, env_start);
     return ret;
 }
-
 
 int
 ATR_backtrace_up(struct ATR *atr,
@@ -558,10 +573,13 @@ ATR_backtrace_up(struct ATR *atr,
 
                 uintptr_t return_addr = tr->cfa_regs[fde_env->return_address_column];
 
-                //printf("return_addr=%p, ret_addr_pos=%p\n",
-                //       (int*)return_addr, (int*)tr->cfa_regs[X8664_CFA_REG_RSP]);
+                //dump_cfa_exec_env(fde_env);
+                //printf("return_addr=%p, ret_addr_pos=%p, cfa_top=%p\n",
+                //       (int*)return_addr,
+                //       (int*)tr->cfa_regs[X8664_CFA_REG_RSP],
+                //       (int*)cfa_top);
 
-                tr->cfa_regs[X8664_CFA_REG_RSP] += 8;
+                tr->cfa_regs[X8664_CFA_REG_RSP] = cfa_top;
 
                 ATR_file_close(atr, &tr->current_module);
                 struct ATR_map_info mapi;
