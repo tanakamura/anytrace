@@ -311,24 +311,26 @@ ATR_dump_process(FILE *fp,
                     ATR_file_lookup_addr_info(&ai, atr, &tr);
 
                     if (ai.flags & ATR_ADDR_INFO_HAVE_SYMBOL) {
-                        printf("#%d %s+0x%x(addr=%p) (%s)\n",
-                               depth,
-                               ai.sym->symstr,
-                               (int)ai.sym_offset,
-                               (void*)tr.cfa_regs[X8664_CFA_REG_RIP],
-                               tr.current_module.path->symstr);
+                        fprintf(fp,
+                                "#%d %s+0x%x(addr=%p) (%s)\n",
+                                depth,
+                                ai.sym->symstr,
+                                (int)ai.sym_offset,
+                                (void*)tr.cfa_regs[X8664_CFA_REG_RIP],
+                                tr.current_module.path->symstr);
                     } else {
-                        printf("#%d %p (%s)\n",
-                               depth,
-                               (void*)tr.cfa_regs[X8664_CFA_REG_RIP],
-                               tr.current_module.path->symstr);
+                        fprintf(fp,
+                                "#%d %p (%s)\n",
+                                depth,
+                                (void*)tr.cfa_regs[X8664_CFA_REG_RIP],
+                                tr.current_module.path->symstr);
                     }
 
                     ATR_addr_info_fini(atr, &ai);
                 } else {
-                    printf("#%d %p\n",
-                           depth,
-                           (void*)tr.cfa_regs[X8664_CFA_REG_RIP]);
+                    fprintf(fp, "#%d %p\n",
+                            depth,
+                            (void*)tr.cfa_regs[X8664_CFA_REG_RIP]);
                     break;
                 }
 

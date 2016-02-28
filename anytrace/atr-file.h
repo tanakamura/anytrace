@@ -25,7 +25,8 @@ struct ATR_file {
     size_t mapped_length;
     unsigned char *mapped_addr;
 
-    struct ATR_section text, debug_abbrev, debug_info, eh_frame, symtab, strtab;
+    struct ATR_section text, debug_abbrev, debug_info,
+        eh_frame, symtab, strtab, dynsym, dynstr;
 };
 
 /* return negative if failed */

@@ -98,6 +98,8 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
     fp->eh_frame.length = 0;
     fp->symtab.length = 0;
     fp->strtab.length = 0;
+    fp->dynsym.length = 0;
+    fp->dynstr.length = 0;
 
     fp->text.start = 0;
     fp->debug_abbrev.start = 0;
@@ -105,6 +107,8 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
     fp->eh_frame.start = 0;
     fp->symtab.start = 0;
     fp->strtab.start = 0;
+    fp->dynsym.start = 0;
+    fp->dynstr.start = 0;
 
     fp->path = path;
 
@@ -125,7 +129,9 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
         SET_SECTION(debug_info, ".debug_info");
         SET_SECTION(eh_frame, ".eh_frame");
         SET_SECTION(symtab, ".symtab");
+        SET_SECTION(dynsym, ".dynsym");
         SET_SECTION(strtab, ".strtab");
+        SET_SECTION(dynstr, ".dynstr");
     }
 
     return 0;
@@ -138,6 +144,44 @@ ATR_file_close(struct ATR *atr, struct ATR_file *fp)
     close(fp->fd);
 }
 
+static int
+lookup_symtab(struct ATR_addr_info *info,
+              struct ATR_section *s,
+              struct ATR_section *str,
+              unsigned char *base,
+              uintptr_t pc)
+{
+    if (str->length == 0) {
+        return -1;
+    }
+    char *strbase = (char*)base + str->start;
+
+    if (s->length) {
+        uintptr_t sptr = s->start;
+        uintptr_t end = sptr + s->length;
+        unsigned int entsize = s->entsize;
+
+        while (sptr < end) {
+            Elf_Sym *sym = (Elf_Sym*)(base + sptr);
+
+            if (pc >= sym->st_value &&
+                pc < (sym->st_value + sym->st_size))
+            {
+                info->flags |= ATR_ADDR_INFO_HAVE_SYMBOL;
+                info->sym = npr_intern(strbase + sym->st_name);
+                info->sym_offset = pc - sym->st_value;
+
+                return 0;
+            }
+
+            sptr += entsize;
+        }
+    }
+
+    return -1;
+}
+
+
 void
 ATR_file_lookup_addr_info(struct ATR_addr_info *info,
                           struct ATR *atr,
@@ -147,43 +191,18 @@ ATR_file_lookup_addr_info(struct ATR_addr_info *info,
 
     struct ATR_file *fp = &tr->current_module;
     uintptr_t pc = tr->pc_offset_in_module-fp->text.start + fp->text.vaddr;
-    if (fp->strtab.length == 0) {
-        return;
+
+    unsigned char *base = fp->mapped_addr;
+
+    int r = lookup_symtab(info, &fp->symtab, &fp->strtab, base, pc);
+    if (r == -1) {
+        lookup_symtab(info, &fp->dynsym, &fp->dynstr, base, pc);
     }
 
     /* 1. .debug_info (not yet)
      * 2. .symtab
      * 3. .dynsym (not yet)
      */
-    if (fp->symtab.length) {
-        uintptr_t sptr = fp->symtab.start;
-        uintptr_t end = sptr + fp->symtab.length;
-        unsigned int entsize = fp->symtab.entsize;
-        unsigned char *base = fp->mapped_addr;
-        char *strbase = (char*)base + fp->strtab.start;
-
-        while (sptr < end) {
-            Elf_Sym *sym = (Elf_Sym*)(base + sptr);
-
-            //printf("%p %p %p %p %d\n",
-            //       (void*)fp->text.start,
-            //       (void*)pc,
-            //       (void*)sym->st_value,
-            //       (void*)(sym->st_value + sym->st_size), entsize);
-
-            if (pc >= sym->st_value &&
-                pc < (sym->st_value + sym->st_size))
-            {
-                info->flags |= ATR_ADDR_INFO_HAVE_SYMBOL;
-                info->sym = npr_intern(strbase + sym->st_name);
-                info->sym_offset = pc - sym->st_value;
-
-                break;
-            }
-
-            sptr += entsize;
-        }
-    }
 
     return;
 }
