@@ -12,6 +12,7 @@
 #include "anytrace/atr.h"
 #include "anytrace/atr-file.h"
 #include "anytrace/atr-process.h"
+#include "anytrace/atr-backtrace.h"
 #include "config.h"
 
 #if ANYTRACE_POINTER_SIZE == 8
@@ -19,11 +20,13 @@ typedef Elf64_Ehdr Elf_Ehdr;
 typedef Elf64_Shdr Elf_Shdr;
 typedef Elf64_Off Elf_Off;
 typedef Elf64_Half Elf_Half;
+typedef Elf64_Sym Elf_Sym;
 #else
 typedef Elf32_Ehdr Elf_Ehdr;
 typedef Elf32_Off Elf_Off;
 typedef Elf32_Shdr Elf_Shdr;
 typedef Elf32_Half Elf_Half;
+typedef Elf32_Sym Elf_Sym;
 #endif
 
 int
@@ -94,12 +97,14 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
     fp->debug_info.length = 0;
     fp->eh_frame.length = 0;
     fp->symtab.length = 0;
+    fp->strtab.length = 0;
 
     fp->text.start = 0;
     fp->debug_abbrev.start = 0;
     fp->debug_info.start = 0;
     fp->eh_frame.start = 0;
     fp->symtab.start = 0;
+    fp->strtab.start = 0;
 
     fp->path = path;
 
@@ -110,7 +115,9 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
 #define SET_SECTION(st_name, sec_name)               \
         if (strcmp(name,sec_name) == 0) {            \
             fp->st_name.length = sh->sh_size;        \
-            fp->st_name.start = sh->sh_offset;                          \
+            fp->st_name.start = sh->sh_offset;       \
+            fp->st_name.entsize = sh->sh_entsize;    \
+            fp->st_name.vaddr = sh->sh_addr;         \
         }
 
         SET_SECTION(text, ".text");
@@ -118,6 +125,7 @@ ATR_file_open(struct ATR_file *fp, struct ATR *atr, struct npr_symbol *path)
         SET_SECTION(debug_info, ".debug_info");
         SET_SECTION(eh_frame, ".eh_frame");
         SET_SECTION(symtab, ".symtab");
+        SET_SECTION(strtab, ".strtab");
     }
 
     return 0;
@@ -133,17 +141,49 @@ ATR_file_close(struct ATR *atr, struct ATR_file *fp)
 void
 ATR_file_lookup_addr_info(struct ATR_addr_info *info,
                           struct ATR *atr,
-                          struct ATR_backtracer *tr,
-                          struct ATR_process *proc,
-                          struct ATR_file *fp)
+                          struct ATR_backtracer *tr)
 {
-    info->sym_lookup_error.code = ATR_NO_ERROR;
-    info->location_lookup_error.code = ATR_NO_ERROR;
+    info->flags = 0;
+
+    struct ATR_file *fp = &tr->current_module;
+    uintptr_t pc = tr->pc_offset_in_module-fp->text.start + fp->text.vaddr;
+    if (fp->strtab.length == 0) {
+        return;
+    }
 
     /* 1. .debug_info (not yet)
      * 2. .symtab
-     * 3. .dynsym
+     * 3. .dynsym (not yet)
      */
+    if (fp->symtab.length) {
+        uintptr_t sptr = fp->symtab.start;
+        uintptr_t end = sptr + fp->symtab.length;
+        unsigned int entsize = fp->symtab.entsize;
+        unsigned char *base = fp->mapped_addr;
+        char *strbase = (char*)base + fp->strtab.start;
+
+        while (sptr < end) {
+            Elf_Sym *sym = (Elf_Sym*)(base + sptr);
+
+            //printf("%p %p %p %p %d\n",
+            //       (void*)fp->text.start,
+            //       (void*)pc,
+            //       (void*)sym->st_value,
+            //       (void*)(sym->st_value + sym->st_size), entsize);
+
+            if (pc >= sym->st_value &&
+                pc < (sym->st_value + sym->st_size))
+            {
+                info->flags |= ATR_ADDR_INFO_HAVE_SYMBOL;
+                info->sym = npr_intern(strbase + sym->st_name);
+                info->sym_offset = pc - sym->st_value;
+
+                break;
+            }
+
+            sptr += entsize;
+        }
+    }
 
     return;
 }
@@ -152,6 +192,4 @@ void
 ATR_addr_info_fini(struct ATR *atr,
                    struct ATR_addr_info *info)
 {
-    ATR_error_clear(atr, &info->sym_lookup_error);
-    ATR_error_clear(atr, &info->location_lookup_error);
 }
