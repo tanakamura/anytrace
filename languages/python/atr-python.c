@@ -8,8 +8,10 @@ eval_hook(struct ATR *atr,
           struct ATR_frame_builder *fb,
           void *hook_arg)
 {
-    puts("python");
-    exit(1);
+    /* PyObject *PyEval_EvalFrameEx(PyFrameObject *f, int throwflag) */
+
+    /* on x86-64, rdi holds "f" */
+    printf("%p\n", (void*)tr->cfa_regs[5]);
 
     return 0;
 }
@@ -26,7 +28,7 @@ ATR_language_init(struct ATR *atr)
     mod.lang_version = 2.7f;
     mod.num_symbol = 1;
 
-    hook_name_list[0] = ATR_intern("PyEval_FrameEx");
+    hook_name_list[0] = ATR_intern("PyEval_EvalFrameEx");
     mod.hook_func_name_list = hook_name_list;
     mod.hook_arg_list = hook_arg_list;
     mod.symbol_hook = eval_hook;

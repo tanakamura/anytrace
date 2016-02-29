@@ -5,6 +5,7 @@
 #include "anytrace/atr-language-module.h"
 
 #include "npr/int-map.h"
+#include "npr/varray.h"
 
 struct ATR_impl {
     int cap_language;           // internal
@@ -14,8 +15,6 @@ struct ATR_impl {
 void ATR_load_language_module(struct ATR *atr);
 int ATR_run_language_hook(struct ATR *atr,
                           struct ATR_backtracer *tr,
-                          void *hook_arg,
-                          struct npr_varray *machine_frame,
-                          struct ATR_language_module *mod);
+                          struct npr_varray *machine_frame);
 
 #endif

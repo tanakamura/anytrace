@@ -96,6 +96,8 @@ ATR_get_frame(struct ATR_stack_frame *frame,
 
         VA_PUSH(struct ATR_stack_frame_entry, &frames, e);
 
+        ATR_run_language_hook(atr, &tr, &frames);
+
         if (tr.state != ATR_BACKTRACER_OK) {
             ATR_error_move(atr, &frame->frame_up_fail_reason, &atr->last_error);
             break;

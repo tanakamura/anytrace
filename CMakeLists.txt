@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.6)
 
 set(ENABLE_WERROR CACHE BOOL OFF)
 
-set(CMAKE_C_FLAGS "-fvisibility=hidden -Wall -Wmissing-prototypes -Werror=incompatible-pointer-types -fPIC")
+set(CMAKE_C_FLAGS "-fvisibility=hidden -Wall -Wmissing-prototypes -Werror=incompatible-pointer-types -fPIC -Werror")
 
 if(ENABLE_WERROR)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")

@@ -8,6 +8,7 @@
 #include "anytrace/atr.h"
 #include "anytrace/atr-process.h"
 #include "anytrace/atr-file.h"
+#include "npr/symbol.h"
 
 #include "anytrace/atr-backtrace.h"
 
@@ -36,6 +37,7 @@ read2(unsigned char *p)
 #endif
 }
 
+#if 0
 static uint64_t
 read8(unsigned char *p)
 {
@@ -64,6 +66,7 @@ read8(unsigned char *p)
 #endif
 
 }
+#endif
 
 static signed int
 read_leb128(unsigned char *ptr,
@@ -573,7 +576,7 @@ ATR_backtrace_up(struct ATR *atr,
 
                 uintptr_t return_addr = tr->cfa_regs[fde_env->return_address_column];
 
-                //dump_cfa_exec_env(fde_env);
+                dump_cfa_exec_env(fde_env);
                 //printf("return_addr=%p, ret_addr_pos=%p, cfa_top=%p\n",
                 //       (int*)return_addr,
                 //       (int*)tr->cfa_regs[X8664_CFA_REG_RSP],
@@ -592,7 +595,7 @@ ATR_backtrace_up(struct ATR *atr,
                 if (r != 0) {
                     tr->state = ATR_BACKTRACER_FRAME_BOTTOM;
                 }
-                //printf("file=%s, pc = %llx\n", mapi.path->symstr, pc);
+                printf("file=%s, pc = %llx\n", mapi.path->symstr, (long long)pc);
 
                 ret = 0;
                 goto fini;
