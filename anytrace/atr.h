@@ -64,12 +64,18 @@ struct ATR_stack_frame_entry {
 #define ATR_FRAME_HAVE_SYMBOL (1<<0)
 #define ATR_FRAME_HAVE_LOCATION (1<<1)
 #define ATR_FRAME_HAVE_BOTTOM_LANG (1<<2)
+#define ATR_FRAME_HAVE_PC (1<<3)
+#define ATR_FRAME_HAVE_OBJ_PATH (1<<4)
     int flags;
 
-    struct npr_symbol *func_name; // valid if HAVE_SYMBOL
+    struct npr_symbol *symbol; // valid if HAVE_SYMBOL
+    uintptr_t pc;              // valid if HAVE_PC
+    intptr_t symbol_offset;   // valid if HAVE_PC && HAVE_SYMBOL
 
     int lineno;                 // valid if HAVE_LOCATION
-    char *path;                 // valid if HAVE_LOCATION
+    char *source_path;          // valid if HAVE_LOCATION
+
+    char *obj_path;             // vlaid if HAVE_OBJ_PATH
 
     int num_child_frame;
     struct ATR_stack_frame *child_frame;
@@ -78,6 +84,8 @@ struct ATR_stack_frame_entry {
 struct ATR_stack_frame {
     int num_entry;
     struct ATR_stack_frame_entry *entries;
+
+    struct ATR_Error frame_up_fail_reason;
 };
 
 ATR_EXPORT int ATR_get_frame(struct ATR_stack_frame *frame,
@@ -90,6 +98,9 @@ ATR_EXPORT void ATR_frame_fini(struct ATR *atr,
 
 ATR_EXPORT void ATR_perror(struct ATR *atr);
 
+
+ATR_EXPORT struct npr_symbol *ATR_intern(const char *sym);
+ATR_EXPORT const char *ATR_get_symstr(struct npr_symbol *sym);
 
 
 #ifdef __cplusplus

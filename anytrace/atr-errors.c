@@ -19,6 +19,8 @@ ATR_error_clear(struct ATR *atr, struct ATR_Error *e)
     case ATR_READ_FRAME_FAILED:
     case ATR_DWARF_UNIMPLEMENTED_CFA_OP:
     case ATR_DWARF_INVALID_CFA:
+    case ATR_FRAME_HAVE_LOOP:
+    case ATR_FRAME_BOTTOM:
         break;
 
     case ATR_LIBC_PATH_ERROR:
@@ -113,6 +115,18 @@ ATR_strerror(struct ATR *atr, struct ATR_Error *e)
         npr_strbuf_printf(&sb,
                           "(DWARF)invalid cfa op(opc = %x)",
                           e->u.dwarf_invalid_cfa.opc);
+        break;
+
+    case ATR_FRAME_HAVE_LOOP:
+        npr_strbuf_printf(&sb,
+                          "(frame)have frame loop");
+
+        break;
+
+    case ATR_FRAME_BOTTOM:
+        npr_strbuf_printf(&sb,
+                          "(frame)bottom");
+
         break;
 
     case ATR_READ_FRAME_FAILED:

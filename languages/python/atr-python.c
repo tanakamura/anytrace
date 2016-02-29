@@ -1,6 +1,8 @@
 #include "anytrace/atr-language-module.h"
+#include <stdio.h>
+#include <stdlib.h>
 
-static void
+static int
 eval_hook(struct ATR *atr,
           struct ATR_backtracer *tr,
           struct ATR_frame_builder *fb,
@@ -8,6 +10,8 @@ eval_hook(struct ATR *atr,
 {
     puts("python");
     exit(1);
+
+    return 0;
 }
 
 void

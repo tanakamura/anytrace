@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include "anytrace/atr.h"
 #include "anytrace/atr-impl.h"
 #include "anytrace/atr-language-module.h"
@@ -50,6 +51,8 @@ ATR_get_frame(struct ATR_stack_frame *frame,
               struct ATR_process *proc,
               int tid)
 {
+    frame->frame_up_fail_reason.code = ATR_NO_ERROR;
+
     struct npr_rbtree visited;
     struct ATR_backtracer tr;
 
@@ -57,17 +60,72 @@ ATR_get_frame(struct ATR_stack_frame *frame,
 
     int r = ATR_backtrace_init(atr, &tr, proc, tid);
     if (r < 0) {
-        ATR_perror(atr);
-        return;
+        return -1;
     }
 
     npr_varray_init(&frames, 16, sizeof(struct ATR_stack_frame_entry));
 
     npr_rbtree_init(&visited);
     for (int depth=0; ; depth++) {
+        int insert = npr_rbtree_insert(&visited, tr.cfa_regs[X8664_CFA_REG_RSP], 1);
+        if (insert == 0) {
+            /* loop is detected */
+            ATR_set_error_code(atr, &frame->frame_up_fail_reason, ATR_FRAME_HAVE_LOOP);
+            break;
+        }
+
+        struct ATR_addr_info ai;
+        struct ATR_stack_frame_entry e;
+
+        e.flags = ATR_FRAME_HAVE_PC;
+        e.num_child_frame = 0;
+        e.pc = tr.cfa_regs[X8664_CFA_REG_RIP];
+
+        if (tr.state == ATR_BACKTRACER_OK) {
+            ATR_file_lookup_addr_info(&ai, atr, &tr);
+
+            if (ai.flags & ATR_ADDR_INFO_HAVE_SYMBOL) {
+                e.flags |= ATR_FRAME_HAVE_SYMBOL;
+                e.symbol = ai.sym;
+                e.symbol_offset = ai.sym_offset;
+            }
+
+            e.flags |= ATR_FRAME_HAVE_OBJ_PATH;
+            e.obj_path = strdup(tr.current_module.path->symstr);
+        }
+
+        VA_PUSH(struct ATR_stack_frame_entry, &frames, e);
+
+        if (tr.state != ATR_BACKTRACER_OK) {
+            ATR_error_move(atr, &frame->frame_up_fail_reason, &atr->last_error);
+            break;
+        }
+
+        int r = ATR_backtrace_up(atr, &tr, proc);
+        if (r != 0) {
+            ATR_error_move(atr, &frame->frame_up_fail_reason, &atr->last_error);
+            break;
+        }
     }
+
+    frame->num_entry = frames.nelem;
+    frame->entries = npr_varray_malloc_close(&frames);
 
     npr_rbtree_fini(&visited);
 
     return 0;
+}
+
+void
+ATR_frame_fini(struct ATR *atr,
+               struct ATR_stack_frame *f)
+{
+    free(f->entries);
+    ATR_error_clear(atr, &f->frame_up_fail_reason);
+}
+
+const char *
+ATR_get_symstr(struct npr_symbol *sym)
+{
+    return sym->symstr;
 }

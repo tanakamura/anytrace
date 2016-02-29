@@ -50,7 +50,37 @@ main(int argc, char **argv)
         exit(1);
     }
 
-    ATR_dump_process(stderr, &atr, &proc);
+    struct ATR_stack_frame frame;
+    r = ATR_get_frame(&frame, &atr, &proc, proc.tasks[0]);
+    if (r < 0) {
+        ATR_perror(&atr);
+        exit(1);
+    }
+
+    for (int di=0; di<frame.num_entry; di++) {
+        struct ATR_stack_frame_entry *e = &frame.entries[di];
+
+        printf("#%d ", di);
+        if (e->flags & ATR_FRAME_HAVE_PC) {
+            if (e->flags & ATR_FRAME_HAVE_SYMBOL) {
+                printf("%s+0x%x(addr=%p) ",
+                       ATR_get_symstr(e->symbol),
+                       (int)e->symbol_offset,
+                       (void*)e->pc);
+            } else {
+                printf("%p ",
+                       (void*)e->pc);
+            }
+        }
+        if (e->flags & ATR_FRAME_HAVE_OBJ_PATH) {
+            printf("(%s)",
+                   e->obj_path);
+        }
+
+        printf("\n");
+    }
+
+    ATR_frame_fini(&atr, &frame);
 
     ATR_close_process(&atr, &proc);
     ATR_fini(&atr);

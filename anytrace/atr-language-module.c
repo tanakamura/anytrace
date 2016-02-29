@@ -4,6 +4,8 @@
 #include <dlfcn.h>
 
 #include "npr/symbol.h"
+#include "npr/varray.h"
+
 #include "anytrace/atr-language-module.h"
 #include "anytrace/atr-impl.h"
 
@@ -82,6 +84,10 @@ load_lang_module_dir(struct ATR* atr, const char *path)
     closedir(files);
 }
 
+struct ATR_frame_builder {
+    struct npr_varray *frames;
+};
+
 void
 ATR_load_language_module(struct ATR *atr)
 {
@@ -92,4 +98,39 @@ ATR_load_language_module(struct ATR *atr)
     if (path) {
         load_lang_module_dir(atr, path);
     }
+}
+
+int
+ATR_run_language_hook(struct ATR *atr,
+                      struct ATR_backtracer *tr,
+                      void *hook_arg,
+                      struct npr_varray *machine_frame,
+                      struct ATR_language_module *mod)
+{
+    struct ATR_frame_builder fb;
+    int r = -1;
+    struct npr_varray lang_stack;
+
+    if (mod->flags & ATR_LANGUAGE_USE_OWN_STACK) {
+        fb.frames = &lang_stack;
+        npr_varray_init(&lang_stack, sizeof(struct ATR_stack_frame_entry), 4);
+    } else {
+        fb.frames = machine_frame;
+    }
+
+    r = mod->symbol_hook(atr, tr, &fb, hook_arg);
+    if (r < 0) {
+        if (mod->flags & ATR_LANGUAGE_USE_OWN_STACK) {
+            npr_varray_discard(fb.frames);
+        }
+
+        return r;
+    }
+
+    if (mod->flags & ATR_LANGUAGE_USE_OWN_STACK) {
+        struct ATR_stack_frame_entry *e = VA_LAST_PTR(struct ATR_stack_frame_entry, machine_frame);
+        e->num_child_frame = lang_stack.nelem;
+        e->child_frame = npr_varray_malloc_close(&lang_stack);
+    }
+    return 0;
 }

@@ -590,7 +590,6 @@ ATR_backtrace_up(struct ATR *atr,
                 }
 
                 if (r != 0) {
-                    ATR_error_clear(atr, &atr->last_error);
                     tr->state = ATR_BACKTRACER_FRAME_BOTTOM;
                 }
                 //printf("file=%s, pc = %llx\n", mapi.path->symstr, pc);
