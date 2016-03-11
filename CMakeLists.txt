@@ -2,11 +2,13 @@ cmake_minimum_required(VERSION 2.6)
 
 set(ENABLE_WERROR CACHE BOOL OFF)
 
-set(CMAKE_C_FLAGS "-fvisibility=hidden -Wall -Wmissing-prototypes -Werror=incompatible-pointer-types -fPIC -Werror")
+set(CMAKE_C_FLAGS "-fvisibility=hidden -Wall -Wmissing-prototypes -Werror=incompatible-pointer-types -fPIC")
 
 if(ENABLE_WERROR)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 
 
 include(TestBigEndian)
@@ -43,10 +45,33 @@ add_library(atr SHARED
   anytrace/atr-language-module.c
   )
 
+add_executable(x86-gen-decoder
+  dfdX/x86-gen-decoder.cpp
+  dfdX/x86-insn-def.cpp
+  )
+
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/dfdX/x86-b0.h ${CMAKE_CURRENT_BINARY_DIR}/dfdX/x86-b1.h
+  DEPENDS x86-gen-decoder
+  COMMAND x86-gen-decoder ${CMAKE_CURRENT_BINARY_DIR}/dfdX/x86-b0.h ${CMAKE_CURRENT_BINARY_DIR}/dfdX/x86-b1.h)
+
+add_library(dfdX
+  dfdX/dfdX.c
+  ${CMAKE_CURRENT_BINARY_DIR}/dfdX/x86-b0.h
+  ${CMAKE_CURRENT_BINARY_DIR}/dfdX/x86-b1.h
+  )
+
+add_dependencies(dfdX dfdx-x86-header)
+
+
 add_executable(anytrace
   anytrace/anytrace.c)
 
-target_link_libraries(atr npr dl)
+add_executable(dfdX-test
+  dfdX/test/dfdX-test.c)
+target_link_libraries(dfdX-test npr dfdX)
+
+target_link_libraries(atr npr dl dfdX)
 target_link_libraries(anytrace atr)
 
 set_property(TARGET anytrace PROPERTY C_STANDARD 99)
